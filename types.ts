@@ -1,4 +1,3 @@
-
 export enum TTSProvider {
   GEMINI = 'GEMINI'
 }
@@ -29,29 +28,8 @@ export interface ManagedKey {
   usageCount: number;
   isTrialKey: boolean; 
   allowedUserIds: string[]; // Danh sách UID được phép dùng Key này. Trống = Dùng chung.
+  addedBy?: string; // UID người đóng góp
 }
-
-export interface UserProfile {
-  uid: string;
-  displayName: string;
-  email: string;
-  photoURL: string;
-  role: UserRole;
-  credits: number; // Ký tự còn lại trong ngày
-  lastActive: string;
-  isBlocked: boolean;
-  planType: PlanType;
-  expiryDate: number; 
-  characterLimit: number; // Giới hạn cơ bản theo gói
-  bonusDailyLimit?: number; // Giới hạn cộng thêm vĩnh viễn do đóng góp Key
-  lastResetDate?: string; // Ngày reset credits gần nhất
-  loginId?: string; // Tên đăng nhập do admin cấp
-  password?: string; // Mật khẩu do admin cấp
-  dailyKeyCount?: number; // Số key đã đóng góp trong ngày
-  lastKeyDate?: string; // Ngày đóng góp key gần nhất
-}
-
-export type VoiceEmotion = 'NEUTRAL' | 'HAPPY' | 'SAD' | 'ANGRY' | 'SERIOUS' | 'EMOTIONAL' | 'WHISPER';
 
 export interface ClonedVoice {
   id: string;
@@ -64,6 +42,28 @@ export interface ClonedVoice {
   audioBase64?: string; // Sample audio for preview/reference
   mimeType?: string;
 }
+
+export interface UserProfile {
+  uid: string;
+  displayName: string;
+  email: string;
+  photoURL: string;
+  role: UserRole;
+  credits: number; // Ký tự còn lại trong ngày
+  lastActive: string; // Format: DD/MM/YYYY
+  isBlocked: boolean;
+  planType: PlanType;
+  expiryDate: number; 
+  characterLimit: number; // Giới hạn cơ bản theo gói
+  bonusDailyLimit?: number; // Giới hạn cộng thêm vĩnh viễn do đóng góp Key
+  lastResetDate?: string; // Ngày reset credits gần nhất
+  loginId?: string; // Tên đăng nhập do admin cấp
+  password?: string; // Mật khẩu do admin cấp
+  dailyKeyCount: number; // Số key đã đóng góp trong ngày (Reset mỗi ngày)
+  customVoices: ClonedVoice[]; // Danh sách giọng mẫu cá nhân (Max 2)
+}
+
+export type VoiceEmotion = 'NEUTRAL' | 'HAPPY' | 'SAD' | 'ANGRY' | 'SERIOUS' | 'EMOTIONAL' | 'WHISPER';
 
 export interface VoicePreset {
   id: string;
