@@ -488,25 +488,6 @@ export const generateAdImage = async (prompt: string, onLog?: any, apiKey: strin
   }
 };
 
-function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
-  const numChannels = buffer.numberOfChannels;
-  const length = buffer.length * numChannels * 2;
-  const result = new ArrayBuffer(length);
-  const view = new DataView(result);
-  const channels = [];
-  for (let i = 0; i < numChannels; i++) channels.push(buffer.getChannelData(i));
-  let offset = 0;
-  for (let i = 0; i < buffer.length; i++) {
-    for (let channel = 0; channel < numChannels; channel++) {
-      let sample = channels[channel][i];
-      sample = Math.max(-1, Math.min(1, sample));
-      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
-      offset += 2;
-    }
-  }
-  return result;
-}
-
 export const mixAudio = async (speechBuffer: ArrayBuffer, musicBuffer: ArrayBuffer, musicVolume: number): Promise<ArrayBuffer> => {
   const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
   
