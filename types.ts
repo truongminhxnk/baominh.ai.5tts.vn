@@ -59,8 +59,9 @@ export interface UserProfile {
   lastResetDate?: string; // Ngày reset credits gần nhất
   loginId?: string; // Tên đăng nhập do admin cấp
   password?: string; // Mật khẩu do admin cấp
-  dailyKeyCount: number; // Số key đã đóng góp trong ngày (Reset mỗi ngày)
-  customVoices: ClonedVoice[]; // Danh sách giọng mẫu cá nhân (Max 2)
+  dailyKeyCount?: number; // Số key đã đóng góp trong ngày (Reset mỗi ngày)
+  customVoices?: ClonedVoice[]; // Danh sách giọng mẫu cá nhân (Max 2)
+  expiryNotifyLevel?: number; // Mức độ thông báo hết hạn: 0 (chưa), 1 (3 ngày), 2 (2 ngày), 3 (1 ngày)
 }
 
 export type VoiceEmotion = 'NEUTRAL' | 'HAPPY' | 'SAD' | 'ANGRY' | 'SERIOUS' | 'EMOTIONAL' | 'WHISPER';
@@ -123,5 +124,8 @@ export interface SystemConfig {
 declare global {
   interface Window {
     lamejs?: any;
+    pdfjsLib?: any;
+    mammoth?: any;
+    Tesseract?: any;
   }
 }

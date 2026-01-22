@@ -4,11 +4,12 @@ import {
   FileText, Wand2, Eraser, LogOut, LayoutDashboard,
   UserPlus, Key, Shield, MessageCircle, ExternalLink,
   Trash2, Edit, Calendar, CreditCard, Save, Users,
-  Gift, Upload, FileJson, Mic, FileUp, Rewind, FastForward, Music
+  Gift, Upload, FileJson, Mic, FileUp, Rewind, FastForward, Music,
+  ChevronDown, ClipboardPaste, CalendarClock, Zap
 } from 'lucide-react';
 import { READING_MODES, PRESET_VOICES, ICONS } from './constants';
 import { GenerationState, VoiceConfig, TTSProvider, ReadingMode, UserProfile, ManagedKey, UserRole, PlanType, ClonedVoice } from './types';
-import { generateContentFromDescription, generateAudioParallel, pcmToMp3, pcmToWav, analyzeVoice, mixAudio } from './services/gemini';
+import { generateContentFromDescription, generateAudioParallel, pcmToMp3, pcmToWav, analyzeVoice, mixAudio, testApiKey } from './services/gemini';
 
 // --- CONFIGURATION ---
 const DAILY_LIMITS: Record<PlanType, number> = {
@@ -34,7 +35,7 @@ const INITIAL_KEYS: ManagedKey[] = [
   { 
       id: 'key-system-default', 
       name: 'Key Hệ thống (Mặc định)', 
-      key: process.env.API_KEY || '', 
+      key: (typeof process !== 'undefined' && process.env?.API_KEY) || '', 
       status: 'VALID', 
       usageCount: 0, 
       isTrialKey: false, 
@@ -435,6 +436,26 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
+  // Notification State
+  const [notification, setNotification] = useState<{
+    open: boolean; title: string; message: string; type: 'error' | 'warning' | 'success' | 'info'; actionLabel?: string; onAction?: () => void;
+  } | null>(null);
+
+  // Payment States
+  const [isPricingModalOpen, setIsPricingModalOpen] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<{ label: string; plan: string; price: number; months: number } | null>(null);
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
+  const [paymentCheckInterval, setPaymentCheckInterval] = useState<NodeJS.Timeout | null>(null);
+  const [lastCheckedExpiry, setLastCheckedExpiry] = useState<number>(0);
+  const [lastCheckedPlanType, setLastCheckedPlanType] = useState<string>("");
+
+  // File Handling States
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const fileTextInputRef = useRef<HTMLInputElement>(null);
+  
+  // User Profile Menu State
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  
   // TTS States
   const [input, setInput] = useState('');
   const [selectedMode, setSelectedMode] = useState<ReadingMode>(ReadingMode.STORY);
@@ -459,12 +480,181 @@ export default function App() {
 
   const activeMode = READING_MODES.find(m => m.id === selectedMode) || READING_MODES[0];
 
+  // Notification System
+  const showNotification = (title: string, message: string, type: 'error' | 'warning' | 'success' | 'info' = 'info', actionLabel?: string, onAction?: () => void, autoClose: boolean = true) => {
+    setNotification({ open: true, title, message, type, actionLabel, onAction });
+    
+    // Tự động đóng sau 5 giây (chỉ khi autoClose = true và không có action button)
+    if (autoClose && !actionLabel) {
+      setTimeout(() => {
+        setNotification(null);
+      }, 5000);
+    }
+  };
+
   // Helper format time
   const formatTime = (time: number) => {
     if(isNaN(time)) return "00:00";
     const min = Math.floor(time / 60);
     const sec = Math.floor(time % 60);
     return `${min}:${sec < 10 ? '0' + sec : sec}`;
+  };
+
+  // Extract Title and Body from Text
+  const extractTitleAndBodyFromText = (raw: string): string => {
+    const lines = raw.split(/\r?\n/).map(l => l.trim());
+    const contentLines: string[] = [];
+
+    for (const line of lines) {
+      if (!line) continue;
+      const upper = line.toUpperCase();
+      // Bỏ các dòng khai báo giọng đọc hoặc meta đầu file
+      if (upper.startsWith("GIỌNG ") || upper.startsWith("GIONG ") || upper.startsWith("VOICE ")) continue;
+      // Bỏ các dòng scan tool
+      if (upper.includes("SCANNED WITH") || upper.includes("Camscanner".toUpperCase())) continue;
+      contentLines.push(line);
+    }
+
+    if (contentLines.length === 0) return raw.trim();
+
+    // TRƯỜNG HỢP VĂN BẢN HÀNH CHÍNH CÓ "THÔNG BÁO"
+    const thongBaoIndex = contentLines.findIndex(l => l.toUpperCase().includes("THÔNG BÁO"));
+    if (thongBaoIndex !== -1) {
+      const titleLine = "THÔNG BÁO";
+      const subtitleLine = (contentLines[thongBaoIndex + 1] || "").trim();
+
+      // Phần thân: từ sau subtitle đến trước "Nơi nhận"
+      const bodySource = contentLines.slice(thongBaoIndex + 2);
+      const bodyLines: string[] = [];
+      for (const l of bodySource) {
+        const upper = l.toUpperCase();
+        if (upper.startsWith("NƠI NHẬN") || upper.startsWith("NOI NHAN")) break;
+        if (upper.includes("SCANNED WITH") || upper.includes("CAMSCANNER")) break;
+        bodyLines.push(l);
+      }
+
+      const cleanTitle = subtitleLine ? `${titleLine}\n${subtitleLine}` : titleLine;
+      const body = bodyLines.join("\n").trim();
+      if (!body) return cleanTitle;
+      return `${cleanTitle}\n\n${body}`;
+    }
+
+    // Mặc định: Dòng đầu tiên là tiêu đề, phần còn lại là nội dung
+    const title = contentLines[0];
+    const body = contentLines.slice(1).join("\n").trim();
+
+    if (!body) return title;
+    return `${title}\n\n${body}`;
+  };
+
+  // File Handling with OCR Support
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsReadingFile(true);
+    try {
+      let text = "";
+      const fileType = file.name.split('.').pop()?.toLowerCase();
+
+      if (fileType === 'txt') {
+         text = await file.text();
+      } else if (fileType === 'pdf') {
+         if ((window as any).pdfjsLib) {
+           (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+           const arrayBuffer = await file.arrayBuffer();
+           const pdf = await (window as any).pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+           for (let i = 1; i <= pdf.numPages; i++) {
+             const page = await pdf.getPage(i);
+             const content = await page.getTextContent();
+             text += content.items.map((item: any) => item.str).join(' ') + '\n\n';
+           }
+           // Nếu sau khi đọc mà vẫn không có text, nhiều khả năng PDF là dạng scan/hình ảnh
+           if (!text.trim()) {
+             const Tesseract = (window as any).Tesseract;
+             if (!Tesseract) {
+               throw new Error("PDF là file scan/hình ảnh và không chứa lớp văn bản. Vui lòng bật OCR (Tesseract.js) hoặc dùng file .docx/.txt được gõ sẵn.");
+             }
+
+             // Fallback: dùng OCR để đọc tối đa 3 trang đầu tiên cho nhẹ
+             showNotification("Đang xử lý OCR", "PDF là file scan, hệ thống sẽ nhận dạng chữ từ hình ảnh...", "info");
+             let ocrText = "";
+             const maxOcrPages = Math.min(pdf.numPages, 3);
+             for (let i = 1; i <= maxOcrPages; i++) {
+               const page = await pdf.getPage(i);
+               const viewport = page.getViewport({ scale: 2 });
+               const canvas = document.createElement('canvas');
+               const context = canvas.getContext('2d');
+               if (!context) continue;
+               canvas.width = viewport.width;
+               canvas.height = viewport.height;
+               await page.render({ canvasContext: context, viewport }).promise;
+               const dataUrl = canvas.toDataURL('image/png');
+               const result = await Tesseract.recognize(dataUrl, 'vie', {});
+               ocrText += (result?.data?.text || "") + "\n\n";
+             }
+
+             if (!ocrText.trim()) {
+               throw new Error("Không thể nhận dạng chữ từ PDF scan. Vui lòng dùng file .docx hoặc .txt được gõ sẵn.");
+             }
+             text = ocrText;
+           }
+         } else {
+             throw new Error("Thư viện PDF chưa tải xong. Vui lòng thử lại.");
+         }
+      } else if (fileType === 'docx') {
+         if ((window as any).mammoth) {
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await (window as any).mammoth.extractRawText({ arrayBuffer });
+            text = result.value;
+         } else {
+            throw new Error("Thư viện Word chưa tải xong. Vui lòng thử lại.");
+         }
+      } else if (fileType === 'jpg' || fileType === 'jpeg' || fileType === 'png' || fileType === 'webp') {
+         // Ảnh chứa văn bản -> dùng OCR (Tesseract.js) nếu có
+         const Tesseract = (window as any).Tesseract;
+         if (!Tesseract) {
+           throw new Error("Ảnh chứa văn bản (JPG/PNG), vui lòng bật OCR (Tesseract.js) để nhận dạng chữ, hoặc chuyển thành file .docx/.txt.");
+         }
+         showNotification("Đang xử lý OCR", "Hệ thống đang nhận dạng chữ từ ảnh, vui lòng chờ...", "info");
+         const dataUrl = await new Promise<string>((resolve, reject) => {
+           const reader = new FileReader();
+           reader.onload = () => resolve(reader.result as string);
+           reader.onerror = () => reject(new Error("Không thể đọc dữ liệu ảnh."));
+           reader.readAsDataURL(file);
+         });
+         const result = await Tesseract.recognize(dataUrl, 'vie', {});
+         text = (result?.data?.text || "");
+      } else if (fileType === 'doc') {
+         // Không thể đọc trực tiếp .doc trong trình duyệt, hướng dẫn người dùng chuyển sang .docx
+         throw new Error("File .doc (Word cũ) chưa được hỗ trợ. Vui lòng lưu lại thành .docx rồi tải lên.");
+      } else {
+          throw new Error("Chỉ hỗ trợ file .txt, .pdf, .docx, .jpg, .png, .webp");
+      }
+
+      if (text.trim()) {
+         const cleaned = extractTitleAndBodyFromText(text);
+         setState(prev => ({ ...prev, text: prev.text + (prev.text ? '\n\n' : '') + cleaned }));
+         showNotification("Thành công", `Đã trích xuất văn bản từ ${file.name}`, "success");
+      } else {
+         showNotification("Lỗi", "File trống hoặc không đọc được nội dung text.", "error");
+      }
+    } catch (err: any) {
+      showNotification("Lỗi đọc file", err.message || "Không thể đọc file", "error");
+    } finally {
+      setIsReadingFile(false);
+      if (fileTextInputRef.current) fileTextInputRef.current.value = '';
+    }
+  };
+
+  // Smart Paste
+  const handleSmartPaste = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) setState(prev => ({ ...prev, text: prev.text ? prev.text + '\n' + text.trim() : text.trim() }));
+    } catch (e) {
+      showNotification("Lỗi Clipboard", "Hãy dùng Ctrl+V.", "warning");
+    }
   };
 
   // Toggle Play/Pause
@@ -554,6 +744,195 @@ export default function App() {
     }
   }, [keys, isDataLoaded]);
 
+  // Payment Functions
+  const getSepayQRUrl = (amount: number): string => {
+    if (!currentUser) return "";
+    const code = `VT-${currentUser.loginId || currentUser.uid}`;
+    const base = "https://qr.sepay.vn/img";
+    const params = new URLSearchParams({
+      acc: "VQRQAGPFR0030",
+      bank: "MBBank",
+      amount: String(amount),
+      des: code
+    });
+    return `${base}?${params.toString()}`;
+  };
+
+  const handleSelectPlan = (plan: { label: string; plan: string; price: number; months: number }) => {
+    setSelectedPlan(plan);
+    showNotification("Đã chọn gói", `${plan.label} - ${plan.price.toLocaleString()}đ. Vui lòng quét QR để thanh toán.`, "info");
+    // Reset lastChecked để bắt đầu kiểm tra mới
+    if (currentUser) {
+      setLastCheckedExpiry(currentUser.expiryDate || 0);
+      setLastCheckedPlanType(currentUser.planType || "");
+    }
+    // Bắt đầu polling kiểm tra thanh toán mỗi 5 giây
+    startPaymentPolling();
+  };
+
+  const checkPaymentStatus = async (showLog = true) => {
+    if (!currentUser) return false;
+
+    try {
+      const loginId = currentUser.loginId || currentUser.uid;
+      if (showLog) console.log(`Đang kiểm tra thanh toán cho ${loginId}...`);
+      
+      const res = await fetch(`/api/check_payment/${loginId}`);
+      const data = await res.json();
+      
+      if (!data.found || !data.user) {
+        if (showLog) console.log(`Chưa tìm thấy thông tin thanh toán.`);
+        return false;
+      }
+
+      // So sánh với giá trị đã kiểm tra lần trước (tránh lặp vô hạn)
+      const oldExpiry = lastCheckedExpiry || currentUser.expiryDate || 0;
+      const oldPlanType = lastCheckedPlanType || currentUser.planType || "";
+      const newExpiry = data.user.expiryDate || 0;
+      const newPlanType = data.user.planType || "";
+
+      // Phát hiện thay đổi: expiryDate tăng đáng kể HOẶC planType thay đổi
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const expiryChanged = newExpiry > 0 && (
+        oldExpiry === 0 || // Chưa có gói trước đó
+        (newExpiry - oldExpiry) > ONE_DAY_MS // Tăng ít nhất 1 ngày
+      );
+      const planTypeChanged = newPlanType && newPlanType !== oldPlanType && newPlanType !== "";
+      
+      if (expiryChanged || planTypeChanged) {
+        // Thanh toán thành công! Cập nhật user
+        console.log(`Phát hiện thay đổi gói! Đang cập nhật thông tin...`);
+        
+        // Cập nhật lastChecked ngay để tránh lặp
+        setLastCheckedExpiry(newExpiry);
+        setLastCheckedPlanType(newPlanType);
+        
+        // Dùng trực tiếp data.user từ API (đã được cập nhật từ webhook)
+        const updatedUser: UserProfile = {
+          ...currentUser,
+          ...data.user,
+          expiryDate: newExpiry,
+          planType: newPlanType as PlanType,
+          uid: currentUser.uid,
+          loginId: currentUser.loginId || data.user.loginId || loginId,
+          displayName: currentUser.displayName || data.user.displayName || currentUser.loginId || loginId,
+        };
+        
+        // Cập nhật state và localStorage
+        setCurrentUser(updatedUser);
+        localStorage.setItem('bm_user_session', JSON.stringify(updatedUser));
+        
+        // Cập nhật trong users array
+        const updatedUsers = users.map(u => u.uid === currentUser.uid ? updatedUser : u);
+        setUsers(updatedUsers);
+        saveDataToApi('users', updatedUsers);
+        
+        // Format ngày tháng chính xác
+        const expiryDate = new Date(newExpiry);
+        const expiryDateStr = expiryDate.toLocaleDateString('vi-VN', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        
+        // Lấy thông tin gói để hiển thị
+        const planInfo = [
+          { plan: "MONTHLY", label: "1 tháng", months: 1 },
+          { plan: "3MONTHS", label: "3 tháng", months: 3 },
+          { plan: "6MONTHS", label: "6 tháng", months: 6 },
+          { plan: "YEARLY", label: "12 tháng", months: 12 }
+        ].find(p => p.plan === newPlanType);
+        
+        const planLabel = planInfo ? planInfo.label : newPlanType;
+        
+        // Hiển thị thông báo với thông tin chi tiết (không tự động đóng)
+        showNotification(
+          "🎉 Thanh toán thành công!", 
+          `Gói ${planLabel} đã được kích hoạt thành công!\nHạn dùng đến: ${expiryDateStr}\nSố ký tự/ngày: 50.000`, 
+          "success",
+          undefined,
+          undefined,
+          false // Không tự động đóng, để người dùng tự đóng
+        );
+        
+        // Không tự động đóng modal, để người dùng tự đóng sau khi xem thông báo
+        setSelectedPlan(null);
+        stopPaymentPolling();
+        return true;
+      } else {
+        // Cập nhật lastChecked ngay cả khi chưa có thay đổi (để tránh false positive)
+        if (newExpiry > 0) setLastCheckedExpiry(newExpiry);
+        if (newPlanType) setLastCheckedPlanType(newPlanType);
+        
+        if (showLog) console.log(`Chưa có thay đổi. Tiếp tục theo dõi...`);
+      }
+      
+      return false;
+    } catch (err: any) {
+      console.error("Lỗi kiểm tra thanh toán:", err);
+      return false;
+    }
+  };
+
+  const startPaymentPolling = () => {
+    // Dừng polling cũ nếu có
+    if (paymentCheckInterval) {
+      clearInterval(paymentCheckInterval);
+    }
+
+    setIsCheckingPayment(true);
+    console.log("Bắt đầu kiểm tra thanh toán tự động (mỗi 5 giây)...");
+    
+    // Kiểm tra ngay lập tức
+    checkPaymentStatus(false);
+    
+    const interval = setInterval(async () => {
+      if (!currentUser) {
+        clearInterval(interval);
+        setIsCheckingPayment(false);
+        return;
+      }
+
+      const success = await checkPaymentStatus(false);
+      if (success) {
+        clearInterval(interval);
+        setIsCheckingPayment(false);
+        setPaymentCheckInterval(null);
+      }
+    }, 5000); // Kiểm tra mỗi 5 giây
+
+    setPaymentCheckInterval(interval);
+    
+    // Tự động dừng sau 10 phút
+    setTimeout(() => {
+      if (paymentCheckInterval === interval) {
+        clearInterval(interval);
+        setIsCheckingPayment(false);
+        setPaymentCheckInterval(null);
+        showNotification("Thông báo", "Đã dừng kiểm tra tự động sau 10 phút. Vui lòng bấm 'Kiểm tra thủ công' nếu đã thanh toán.", "warning");
+      }
+    }, 600000);
+  };
+
+  const stopPaymentPolling = () => {
+    if (paymentCheckInterval) {
+      clearInterval(paymentCheckInterval);
+      setPaymentCheckInterval(null);
+    }
+    setIsCheckingPayment(false);
+  };
+
+  // Cleanup polling khi đóng modal hoặc unmount
+  useEffect(() => {
+    return () => {
+      if (paymentCheckInterval) {
+        clearInterval(paymentCheckInterval);
+      }
+    };
+  }, [paymentCheckInterval]);
+
   // Handle Logic Login Check & Reset Daily Limit
   const handleLogin = (u: string, p: string, onError: any) => {
       const cleanUser = u.trim();
@@ -592,7 +971,7 @@ export default function App() {
           const defaultKey: ManagedKey = { 
             id: 'key-system-default-restored', 
             name: 'Key Hệ thống (Khôi phục)', 
-            key: process.env.API_KEY || '', 
+            key: (typeof process !== 'undefined' && process.env?.API_KEY) || '', 
             status: 'VALID', 
             usageCount: 0, 
             isTrialKey: false, 
@@ -641,15 +1020,35 @@ export default function App() {
       alert(`🎉 Chúc mừng! Bạn đã nhận thêm ${KEY_REWARD_CREDITS.toLocaleString()} ký tự.`);
   };
 
-  // Logic TTS
+  // Logic TTS - Select Best Key với retry và rotation
+  const selectBestKey = (excluded: string[] = []) => {
+    const validKeysInDb = keys.filter(k => k.status !== 'INVALID' && !excluded.includes(k.key));
+    
+    // 1. Ưu tiên Key riêng của user
+    if (currentUser) {
+        const privateKeys = validKeysInDb.filter(k => k.allowedUserIds.includes(currentUser.uid));
+        if (privateKeys.length > 0) return privateKeys[0].key;
+    }
+    
+    // 2. Ưu tiên Key chung trong DB & Xoay tua (Load Balancing)
+    const sharedKeys = validKeysInDb.filter(k => k.allowedUserIds.length === 0);
+    if (sharedKeys.length > 0) {
+        // Thực hiện xoay tua ngẫu nhiên nếu có >= 2 key để chia tải
+        const randomIndex = Math.floor(Math.random() * sharedKeys.length);
+        return sharedKeys[randomIndex].key;
+    }
+    
+    // 3. Cuối cùng mới lấy Key mặc định từ Env (nếu nó chưa bị loại trừ)
+    const envKey = (typeof process !== 'undefined' && process.env?.API_KEY) || '';
+    if (envKey && !excluded.includes(envKey)) {
+        return envKey;
+    }
+
+    return '';
+  };
+
   const getApiKeyForUser = () => {
-      const privateKey = keys.find(k => k.allowedUserIds.includes(currentUser?.uid || ''));
-      if (privateKey && privateKey.key && privateKey.key !== 'AIzaSyExampleKey') return privateKey.key;
-      const sharedKey = keys.find(k => k.allowedUserIds.length === 0);
-      if (sharedKey && sharedKey.key && sharedKey.key !== 'AIzaSyExampleKey') return sharedKey.key;
-      
-      // Fallback mạnh nhất: Trả về env key nếu danh sách quản lý bị trống
-      return process.env.API_KEY || '';
+      return selectBestKey();
   };
 
   // Handle Background Music Upload
@@ -729,16 +1128,43 @@ export default function App() {
 
   const handleGenerateText = async () => {
     if (!input.trim()) return;
-    const key = getApiKeyForUser();
-    if(!key) return setState(prev => ({...prev, error: "Hệ thống chưa có API Key khả dụng. Vui lòng liên hệ Admin hoặc đóng góp Key."}));
 
     setState(prev => ({ ...prev, isGeneratingText: true, error: null }));
-    try {
+    
+    const attempt = async (retries = 3, excluded: string[] = []) => {
+      const key = selectBestKey(excluded);
+      if (!key) {
+          showNotification("Hết Key", "Vui lòng thêm API Key mới.", "error");
+          setState(prev => ({...prev, isGeneratingText: false}));
+          return;
+      }
+      try {
         const text = await generateContentFromDescription(input, activeMode.prompt, undefined, key);
         setState(prev => ({ ...prev, text, isGeneratingText: false }));
-    } catch (e: any) {
-        setState(prev => ({ ...prev, error: e.message, isGeneratingText: false }));
-    }
+      } catch (e: any) {
+        const err = e.message.toLowerCase();
+        const isRateLimit = err.includes("429") || err.includes("quota") || err.includes("hạn mức") || err.includes("resource exhausted");
+        const isAuthError = err.includes("api key") || err.includes("403") || err.includes("unauthenticated");
+
+        if (isRateLimit || isAuthError || err.includes("server") || err.includes("fetch")) {
+             if (isAuthError && !isRateLimit && keys.some(k => k.key === key)) {
+                setKeys(prev => prev.map(k => k.key === key ? {...k, status: 'INVALID'} : k));
+             }
+            
+            if (retries > 0) {
+                 console.log(`Gặp lỗi (${e.message}). Đổi Key khác... (${retries})`);
+                 await attempt(retries - 1, [...excluded, key]);
+            } else {
+                 setState(prev => ({...prev, isGeneratingText: false}));
+                 showNotification("Thất bại", "Không thể tạo nội dung lúc này. Vui lòng thử lại sau.", "error");
+            }
+        } else {
+            showNotification("Lỗi", e.message, "error");
+            setState(prev => ({ ...prev, error: e.message, isGeneratingText: false }));
+        }
+      }
+    };
+    await attempt();
   };
 
   const handleGenerateAudio = async () => {
@@ -747,11 +1173,16 @@ export default function App() {
         return setState(prev => ({...prev, error: `Không đủ ký tự! (Cần: ${state.text.length}, Còn: ${currentUser.credits}). Hãy đóng góp Key để nhận thêm.`}));
     }
 
-    const key = getApiKeyForUser();
-    if(!key) return setState(prev => ({...prev, error: "Hệ thống chưa có API Key khả dụng."}));
-
     setState(prev => ({ ...prev, isGeneratingAudio: true, error: null, audioUrl: null }));
-    try {
+
+    const attempt = async (retries = 3, excluded: string[] = []) => {
+      const key = selectBestKey(excluded);
+      if (!key) {
+          showNotification("Hết Key", "Vui lòng thêm API Key mới.", "error");
+          setState(prev => ({...prev, isGeneratingAudio: false}));
+          return;
+      }
+      try {
         // 1. Generate Speech
         let buffer = await generateAudioParallel(state.text, voiceConfig, (p) => console.log(p), undefined, key);
         
@@ -778,9 +1209,32 @@ export default function App() {
         setState(prev => ({ 
             ...prev, isGeneratingAudio: false, audioUrl: URL.createObjectURL(wavBlob), mp3Url: URL.createObjectURL(mp3Blob), audioBuffer: buffer 
         }));
-    } catch (e: any) {
-        setState(prev => ({ ...prev, error: e.message, isGeneratingAudio: false }));
-    }
+      } catch (e: any) {
+        const err = e.message.toLowerCase();
+        const isRateLimit = err.includes("429") || err.includes("quota") || err.includes("hạn mức") || err.includes("resource exhausted");
+        // Strict check: Chỉ lỗi auth mới tính là Invalid Key
+        const isAuthError = err.includes("api key") || err.includes("403") || err.includes("unauthenticated");
+
+        if (isRateLimit || isAuthError || err.includes("server") || err.includes("fetch")) {
+             // Chỉ đánh dấu Invalid nếu chắc chắn là lỗi Auth
+             if (isAuthError && !isRateLimit && keys.some(k => k.key === key)) {
+                setKeys(prev => prev.map(k => k.key === key ? {...k, status: 'INVALID'} : k));
+             }
+            
+            if (retries > 0) {
+                 console.log(isRateLimit ? `Key bị giới hạn (429). Đổi Key khác... (${retries})` : `Gặp lỗi (${e.message}). Đổi Key khác... (${retries})`);
+                 await attempt(retries - 1, [...excluded, key]);
+            } else {
+                 setState(prev => ({...prev, isGeneratingAudio: false}));
+                 showNotification("Thất bại", "Hệ thống đang bận hoặc hết Key. Vui lòng thử lại sau.", "error");
+            }
+        } else {
+            showNotification("Lỗi", e.message, "error");
+            setState(prev => ({ ...prev, error: e.message, isGeneratingAudio: false }));
+        }
+      }
+    };
+    await attempt();
   };
 
   // Reset player time and Auto Play when new audio generated
@@ -829,6 +1283,13 @@ export default function App() {
         accept="audio/*" 
         className="hidden" 
       />
+      <input 
+        type="file" 
+        ref={fileTextInputRef} 
+        onChange={handleFileSelect} 
+        accept=".txt,.pdf,.docx,.doc,.jpg,.jpeg,.png,.webp" 
+        className="hidden" 
+      />
 
       {/* Analyzing Overlay */}
       {isAnalyzing && (
@@ -848,20 +1309,123 @@ export default function App() {
                 Gemini Voice AI
             </h1>
             <div className="flex items-center gap-4">
-                <div className="flex flex-col items-end">
-                    <span className="font-bold text-white">{currentUser.displayName}</span>
-                    <span className="text-xs text-slate-400 bg-slate-900 px-2 rounded border border-slate-800 flex items-center gap-1">
-                        {currentUser.planType} • {currentUser.credits.toLocaleString()} ký tự
-                    </span>
-                </div>
-                {currentUser.role === 'ADMIN' && (
-                    <button onClick={() => setShowAdmin(!showAdmin)} className={`p-2 rounded-lg transition-colors ${showAdmin ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'}`}>
-                        <Shield className="w-5 h-5" />
+                {currentUser ? (
+                  <div className="relative">
+                    <button onClick={() => setShowProfileMenu(!showProfileMenu)} className="flex items-center gap-3 p-1.5 pr-4 bg-slate-800 border border-slate-700 rounded-full hover:shadow-md transition-all">
+                      <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-sm">
+                        {currentUser.displayName.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="text-left hidden sm:block">
+                        <p className="text-[11px] font-black text-slate-200 uppercase leading-none">{currentUser.displayName}</p>
+                        <p className="text-[10px] font-bold text-indigo-400 mt-0.5">{currentUser.credits.toLocaleString()} KT</p>
+                      </div>
+                      <ChevronDown className="w-4 h-4 text-slate-400"/>
                     </button>
-                )}
-                <button onClick={() => setCurrentUser(null)} className="p-2 bg-slate-800 hover:bg-red-900/50 text-slate-400 hover:text-red-400 rounded-lg transition-colors">
-                    <LogOut className="w-5 h-5" />
-                </button>
+                    {showProfileMenu && (
+                      <div className="absolute right-0 mt-3 w-72 bg-slate-900 rounded-2xl shadow-2xl border border-slate-800 p-3 z-[70] animate-in fade-in">
+                        {/* Thông tin gói cước và ngày hết hạn */}
+                        <div className="space-y-2 mb-3 pb-3 border-b border-slate-800">
+                          {/* Gói cước */}
+                          <div className="flex items-center justify-between p-2 bg-gradient-to-r from-indigo-900/50 to-blue-900/50 rounded-xl">
+                            <div className="flex items-center gap-2">
+                              <Zap className="w-4 h-4 text-amber-500"/>
+                              <span className="text-[10px] font-black text-slate-300 uppercase">Gói:</span>
+                              <span className="text-[11px] font-black text-indigo-400">
+                                {currentUser.planType === 'MONTHLY' ? '1 tháng' :
+                                 currentUser.planType === '3MONTHS' ? '3 tháng' :
+                                 currentUser.planType === '6MONTHS' ? '6 tháng' :
+                                 currentUser.planType === 'YEARLY' ? '12 tháng' :
+                                 currentUser.planType === 'TRIAL' ? 'Dùng thử' :
+                                 currentUser.planType}
+                              </span>
+                            </div>
+                          </div>
+                          
+                          {/* Ngày hết hạn */}
+                          {currentUser.expiryDate && currentUser.expiryDate > 0 ? (
+                            <div className="flex items-center justify-between p-2 bg-slate-800/50 rounded-xl">
+                              <div className="flex items-center gap-2">
+                                <CalendarClock className="w-4 h-4 text-slate-400"/>
+                                <span className="text-[10px] font-bold text-slate-300">Hết hạn:</span>
+                              </div>
+                              <span className="text-[10px] font-black text-slate-200">
+                                {new Date(currentUser.expiryDate).toLocaleDateString('vi-VN', {
+                                  day: '2-digit',
+                                  month: '2-digit',
+                                  year: 'numeric'
+                                })}
+                              </span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between p-2 bg-amber-900/20 rounded-xl">
+                              <div className="flex items-center gap-2">
+                                <CalendarClock className="w-4 h-4 text-amber-500"/>
+                                <span className="text-[10px] font-bold text-amber-400">Chưa có gói</span>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Tài nguyên API Key */}
+                          {(() => {
+                            const totalKeys = keys.length;
+                            const validKeys = keys.filter(k => k.status === 'VALID').length;
+                            const keyPercentage = totalKeys > 0 ? Math.round((validKeys / totalKeys) * 100) : 0;
+                            const keyColorClass = keyPercentage >= 70 ? 'text-emerald-500' : keyPercentage >= 40 ? 'text-amber-500' : 'text-red-500';
+                            const keyBgClass = keyPercentage >= 70 ? 'bg-emerald-500' : keyPercentage >= 40 ? 'bg-amber-500' : 'bg-red-500';
+                            const keyTextClass = keyPercentage >= 70 ? 'text-emerald-400' : keyPercentage >= 40 ? 'text-amber-400' : 'text-red-400';
+                            
+                            return (
+                              <button
+                                onClick={() => {
+                                  setShowProfileMenu(false);
+                                  if (currentUser?.role === 'ADMIN') {
+                                    setShowAdmin(true);
+                                  } else {
+                                    showNotification("Thông tin", `API Keys: ${validKeys}/${totalKeys} hoạt động (${keyPercentage}%)`, "info");
+                                  }
+                                }}
+                                className="w-full flex items-center justify-between p-2 bg-slate-800/50 hover:bg-slate-800 rounded-xl transition-all group"
+                              >
+                                <div className="flex items-center gap-2">
+                                  <Key className={`w-4 h-4 ${keyColorClass}`}/>
+                                  <span className="text-[10px] font-bold text-slate-300">API Keys:</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 w-20 bg-slate-700 rounded-full h-2 overflow-hidden">
+                                    <div 
+                                      className={`h-full ${keyBgClass} transition-all`}
+                                      style={{ width: `${keyPercentage}%` }}
+                                    />
+                                  </div>
+                                  <span className={`text-[10px] font-black ${keyTextClass} min-w-[35px] text-right`}>
+                                    {keyPercentage}%
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })()}
+                        </div>
+                        
+                        {/* Các nút chức năng */}
+                        <button
+                          onClick={() => { setIsPricingModalOpen(true); setShowProfileMenu(false); }}
+                          className="w-full flex items-center gap-3 px-4 py-3 text-[11px] font-bold text-slate-300 hover:bg-emerald-900/20 rounded-xl"
+                        >
+                          <CalendarClock className="w-4 h-4 text-emerald-400" />
+                          Gói cước & Thanh toán
+                        </button>
+                        {currentUser.role === 'ADMIN' && (
+                          <button onClick={() => { setShowAdmin(true); setShowProfileMenu(false); }} className="w-full flex items-center gap-3 px-4 py-3 text-[11px] font-bold text-slate-300 hover:bg-indigo-900/20 rounded-xl">
+                            <LayoutDashboard className="w-4 h-4"/> Admin Panel
+                          </button>
+                        )}
+                        <button onClick={() => { setCurrentUser(null); localStorage.removeItem('bm_user_session'); }} className="w-full flex items-center gap-3 px-4 py-3 text-[11px] font-bold text-red-400 hover:bg-red-900/20 rounded-xl mt-1">
+                          <LogOut className="w-4 h-4"/> Đăng xuất
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : null}
             </div>
         </header>
 
@@ -925,7 +1489,18 @@ export default function App() {
                                     Văn bản cần đọc
                                 </h2>
                                 <div className="flex gap-2">
-                                     <button onClick={() => setState(prev => ({...prev, text: ''}))} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"><Eraser className="w-4 h-4"/></button>
+                                    <button 
+                                      onClick={() => fileTextInputRef.current?.click()} 
+                                      disabled={isReadingFile}
+                                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 disabled:opacity-50" 
+                                      title="Nhập file văn bản"
+                                    >
+                                      {isReadingFile ? <Loader2 className="w-4 h-4 animate-spin"/> : <FileUp className="w-4 h-4"/>}
+                                    </button>
+                                    <button onClick={handleSmartPaste} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400" title="Dán từ clipboard">
+                                      <ClipboardPaste className="w-4 h-4"/>
+                                    </button>
+                                    <button onClick={() => setState(prev => ({...prev, text: ''}))} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400"><Eraser className="w-4 h-4"/></button>
                                 </div>
                             </div>
                             <textarea 
@@ -1133,6 +1708,124 @@ export default function App() {
                 <p className="text-sm">{state.error}</p>
                 <button onClick={() => setState(prev => ({...prev, error: null}))} className="absolute top-2 right-2 p-1 hover:bg-red-500/20 rounded-full"><X className="w-3 h-3"/></button>
             </div>
+        )}
+
+        {/* Notification Toast */}
+        {notification && notification.open && (
+          <div className="fixed top-6 right-6 z-[300] animate-in slide-in-from-top-2 fade-in duration-300">
+            <div className={`min-w-[320px] max-w-md rounded-2xl shadow-2xl border-2 p-6 backdrop-blur-xl ${
+              notification.type === 'success' ? 'bg-emerald-900/90 border-emerald-500' :
+              notification.type === 'error' ? 'bg-red-900/90 border-red-500' :
+              notification.type === 'warning' ? 'bg-amber-900/90 border-amber-500' :
+              'bg-blue-900/90 border-blue-500'
+            }`}>
+              <div className="flex items-start gap-4">
+                <div className={`flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center ${
+                  notification.type === 'success' ? 'bg-emerald-600 text-white' :
+                  notification.type === 'error' ? 'bg-red-600 text-white' :
+                  notification.type === 'warning' ? 'bg-amber-600 text-white' :
+                  'bg-blue-600 text-white'
+                }`}>
+                  {notification.type === 'success' ? '✓' :
+                   notification.type === 'error' ? '✕' :
+                   notification.type === 'warning' ? '⚠' : 'ℹ'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="font-black text-white mb-1 text-sm">{notification.title}</h4>
+                  <p className="text-xs text-slate-200 whitespace-pre-line">{notification.message}</p>
+                  {notification.actionLabel && notification.onAction && (
+                    <button
+                      onClick={() => {
+                        notification.onAction?.();
+                        setNotification(null);
+                      }}
+                      className="mt-3 px-4 py-2 bg-slate-800 text-white rounded-xl text-[10px] font-black uppercase hover:bg-slate-700 transition-all"
+                    >
+                      {notification.actionLabel}
+                    </button>
+                  )}
+                </div>
+                <button
+                  onClick={() => setNotification(null)}
+                  className="flex-shrink-0 text-slate-400 hover:text-slate-200 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Payment Modal */}
+        {isPricingModalOpen && (
+          <div className="fixed inset-0 bg-black/80 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div className="bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-white">Gói cước & Thanh toán</h2>
+                <button 
+                  onClick={() => { 
+                    setIsPricingModalOpen(false); 
+                    setSelectedPlan(null); 
+                    stopPaymentPolling(); 
+                  }} 
+                  className="text-slate-400 hover:text-white transition-colors"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                {isCheckingPayment && (
+                  <div className="bg-blue-900/20 border border-blue-500/30 rounded-xl p-4 flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-blue-400 animate-spin"/>
+                    <p className="text-sm text-blue-300">Đang kiểm tra thanh toán tự động...</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { label: "1 tháng", plan: "MONTHLY", price: 150000, months: 1 },
+                    { label: "3 tháng", plan: "3MONTHS", price: 450000, months: 3 },
+                    { label: "6 tháng", plan: "6MONTHS", price: 900000, months: 6 },
+                    { label: "12 tháng", plan: "YEARLY", price: 1800000, months: 12 }
+                  ].map((plan) => (
+                    <button
+                      key={plan.plan}
+                      onClick={() => handleSelectPlan(plan)}
+                      className={`p-6 rounded-xl border-2 transition-all text-left ${
+                        selectedPlan?.plan === plan.plan
+                          ? 'border-indigo-500 bg-indigo-900/20'
+                          : 'border-slate-800 hover:border-slate-700 bg-slate-800/50'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="text-lg font-bold text-white">{plan.label}</h3>
+                        <span className="text-2xl font-black text-indigo-400">{plan.price.toLocaleString()}đ</span>
+                      </div>
+                      <p className="text-xs text-slate-400">50.000 ký tự/ngày</p>
+                    </button>
+                  ))}
+                </div>
+
+                {selectedPlan && (
+                  <div className="mt-6 p-6 bg-slate-800/50 rounded-xl border border-slate-700">
+                    <h3 className="text-lg font-bold text-white mb-4">Quét QR để thanh toán</h3>
+                    <div className="flex flex-col items-center gap-4">
+                      <img 
+                        src={getSepayQRUrl(selectedPlan.price)} 
+                        alt="QR Code" 
+                        className="w-64 h-64 border-4 border-white rounded-xl"
+                      />
+                      <div className="text-center space-y-2">
+                        <p className="text-sm text-slate-300">Số tiền: <span className="font-bold text-white">{selectedPlan.price.toLocaleString()}đ</span></p>
+                        <p className="text-xs text-slate-400">Mã thanh toán: <span className="font-mono text-indigo-400">VT-{currentUser?.loginId || currentUser?.uid}</span></p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
