@@ -252,10 +252,12 @@ app.post('/api/sepay_webhook', async (req, res) => {
     }
 
     // 4. Tìm loginId trong nội dung: dạng VT-loginId hoặc VTloginId (không có dấu gạch)
-    // SePay có thể gửi: "VTtruong2024vn" hoặc "VT-truong2024.vn"
-    let match = description.match(/VT-([a-zA-Z0-9_.-]+)/i);  // Tìm VT-{loginId}
+    // SePay có thể gửi: "VTtruong2024vn", "VT-truong2024.vn", hoặc "VTguest"
+    // Tìm trong cả description và content để đảm bảo không bỏ sót
+    const searchText = (description || "").toLowerCase();
+    let match = searchText.match(/vt-([a-z0-9_.-]+)/);  // Tìm VT-{loginId}
     if (!match) {
-      match = description.match(/VT([a-zA-Z0-9_.-]+)/i);     // Tìm VT{loginId} (không có dấu gạch)
+      match = searchText.match(/vt([a-z0-9_.-]+)/);     // Tìm VT{loginId} (không có dấu gạch)
     }
     
     if (!match) {
@@ -265,8 +267,8 @@ app.post('/api/sepay_webhook', async (req, res) => {
     
     let loginId = match[1].toLowerCase();
     // Xử lý trường hợp SePay gửi "VTtruong2024vn" -> cần tách thành "truong2024.vn"
-    // Nếu loginId không có dấu chấm và có "vn" ở cuối, có thể là domain
-    if (loginId.endsWith("vn") && !loginId.includes(".")) {
+    // Nếu loginId không có dấu chấm và có "vn" ở cuối (và không phải là "guest"), có thể là domain
+    if (loginId !== "guest" && loginId.endsWith("vn") && !loginId.includes(".")) {
       // Thử tách: "truong2024vn" -> "truong2024.vn"
       const withoutVn = loginId.slice(0, -2);
       if (withoutVn.length > 0) {
@@ -274,7 +276,7 @@ app.post('/api/sepay_webhook', async (req, res) => {
       }
     }
     
-    console.log(`🔍 Extracted loginId: "${loginId}" from description`);
+    console.log(`🔍 Extracted loginId: "${loginId}" from description: "${description}"`);
 
     // 5. Tải danh sách users từ DB
     const usersRes = await pool.query('SELECT data FROM bm_settings WHERE id = $1', ['users']);
@@ -283,11 +285,34 @@ app.post('/api/sepay_webhook', async (req, res) => {
     }
 
     const allUsers = usersRes.rows[0].data || [];
-    const user = allUsers.find(u => u.loginId?.toLowerCase() === loginId);
+    let user = allUsers.find(u => u.loginId?.toLowerCase() === loginId);
 
+    // Nếu không tìm thấy user, tự động tạo user mới (để xử lý trường hợp user "guest" chưa có trong DB)
     if (!user) {
-      console.log(`ℹ️ Webhook: User not found for loginId "${loginId}"`);
-      return res.status(200).json({ ok: true, message: "User not found for this loginId" });
+      console.log(`ℹ️ Webhook: User not found for loginId "${loginId}", creating new user...`);
+      user = {
+        uid: loginId === "guest" ? "guest" : `user-${Date.now()}`,
+        loginId: loginId,
+        displayName: loginId === "guest" ? "Khách" : loginId,
+        role: loginId === "guest" ? "GUEST" : "USER",
+        email: "",
+        photoURL: "",
+        lastActive: new Date().toISOString(),
+        isBlocked: false,
+        planType: "TRIAL",
+        expiryDate: Date.now(),
+        credits: 0,
+        characterLimit: 0,
+        dailyKeyCount: 0,
+        customVoices: []
+      };
+      allUsers.push(user);
+      // Lưu user mới vào DB
+      await pool.query(
+        'INSERT INTO bm_settings (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
+        ['users', JSON.stringify(allUsers)]
+      );
+      console.log(`✅ Webhook: Created new user with loginId "${loginId}"`);
     }
 
     // 6. Kiểm tra tránh xử lý trùng lặp (dùng transId hoặc timestamp)

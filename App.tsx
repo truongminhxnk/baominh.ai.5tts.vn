@@ -964,7 +964,7 @@ export default function App() {
       }
   };
 
-  const handleGuest = () => {
+  const handleGuest = async () => {
       // Logic khôi phục key nếu hệ thống không có key nào (do lỡ xóa)
       const hasSystemKey = keys.some(k => k.allowedUserIds.length === 0);
       if (!hasSystemKey) {
@@ -980,7 +980,32 @@ export default function App() {
           setKeys(prev => [...prev, defaultKey]);
       }
 
-      setCurrentUser({ uid: 'guest', displayName: 'Khách', role: 'GUEST', credits: 1000, planType: 'TRIAL', loginId: 'guest', email: '', photoURL: '', lastActive: '', isBlocked: false, expiryDate: 0, characterLimit: 1000, dailyKeyCount: 0, customVoices: [] });
+      const guestUser: UserProfile = { 
+        uid: 'guest', 
+        displayName: 'Khách', 
+        role: 'GUEST', 
+        credits: 1000, 
+        planType: 'TRIAL', 
+        loginId: 'guest', 
+        email: '', 
+        photoURL: '', 
+        lastActive: '', 
+        isBlocked: false, 
+        expiryDate: 0, 
+        characterLimit: 1000, 
+        dailyKeyCount: 0, 
+        customVoices: [] 
+      };
+      
+      setCurrentUser(guestUser);
+      
+      // Lưu user "guest" vào DB để webhook có thể tìm thấy
+      const existingUser = users.find(u => u.loginId === 'guest' || u.uid === 'guest');
+      if (!existingUser) {
+        const updatedUsers = [...users, guestUser];
+        setUsers(updatedUsers);
+        await saveDataToApi('users', updatedUsers);
+      }
   };
 
   // Handle Key Submission
