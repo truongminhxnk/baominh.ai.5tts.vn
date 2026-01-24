@@ -115,8 +115,10 @@ export const handleAiError = (error: any): { message: string, isRateLimit: boole
  * BỘ 1: CHUẨN HÓA CƠ BẢN BẰNG QUY TẮC
  * - Xử lý ký hiệu, đơn vị, ngày tháng, từ viết tắt phổ biến
  * - Không thay đổi nội dung, chỉ làm cho dễ đọc to hơn
+ * @param text - Văn bản cần chuẩn hóa
+ * @param customAbbreviations - Từ điển từ viết tắt từ database (optional)
  */
-export const normalizeTextForSpeech = (text: string): string => {
+export const normalizeTextForSpeech = (text: string, customAbbreviations?: Array<{ abbreviation: string; fullText: string }>): string => {
   if (!text) return "";
 
   // 1. Chuẩn hóa Unicode (NFC) để xử lý lỗi font và dấu tiếng Việt
@@ -162,10 +164,21 @@ export const normalizeTextForSpeech = (text: string): string => {
   processed = processed.replace(/\bhội đồng nhân và\b/gi, "Hội đồng nhân dân");
   processed = processed.replace(/\bHội đồng nhân và\b/g, "Hội đồng nhân dân");
 
-  // 5. Mở rộng từ viết tắt (Theo danh sách chuẩn từ constants)
-  const sortedAbbrs = Object.keys(VIETNAMESE_ABBREVIATIONS).sort((a, b) => b.length - a.length);
+  // 5. Mở rộng từ viết tắt (Theo danh sách chuẩn từ constants và từ điển hệ thống)
+  // Merge từ điển mặc định với từ điển từ database
+  const customAbbrDict: Record<string, string> = {};
+  if (customAbbreviations && Array.isArray(customAbbreviations)) {
+    for (const item of customAbbreviations) {
+      if (item.abbreviation && item.fullText) {
+        customAbbrDict[item.abbreviation] = item.fullText;
+      }
+    }
+  }
+  
+  const mergedAbbrDict = { ...VIETNAMESE_ABBREVIATIONS, ...customAbbrDict };
+  const sortedAbbrs = Object.keys(mergedAbbrDict).sort((a, b) => b.length - a.length);
   for (const abbr of sortedAbbrs) {
-      const fullText = VIETNAMESE_ABBREVIATIONS[abbr];
+      const fullText = mergedAbbrDict[abbr];
       const escapedAbbr = abbr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       // Nếu có dấu chấm ở cuối (TP.), match nguyên văn, nếu không dùng word boundary.
       // Dùng 'gi' để không phân biệt hoa/thường, giúp đọc đúng trong mọi kiểu văn bản.
@@ -182,6 +195,67 @@ export const normalizeTextForSpeech = (text: string): string => {
 
   // 8. Dọn dẹp khoảng trắng thừa
   return processed.replace(/\s+/g, ' ').trim();
+};
+
+/**
+ * Extract abbreviations from text using Gemini AI
+ * Returns a list of abbreviations found in the text
+ */
+export const extractAbbreviations = async (rawText: string, apiKey: string = "", onLog?: (m: string, t: 'info' | 'error') => void): Promise<Array<{ abbreviation: string; fullText: string }>> => {
+  const text = rawText || "";
+  if (!text.trim()) return [];
+
+  try {
+    const ai = new GoogleGenAI({ apiKey });
+    const prompt = `
+Bạn là chuyên gia ngôn ngữ tiếng Việt. Nhiệm vụ của bạn là PHÁT HIỆN và LIỆT KÊ tất cả các từ viết tắt trong văn bản sau.
+
+Văn bản:
+"""${text}"""
+
+Hãy trả về DANH SÁCH các từ viết tắt dưới dạng JSON array, mỗi phần tử có 2 trường:
+- "abbreviation": từ viết tắt (VD: "HĐND", "UBND")
+- "fullText": câu đầy đủ của từ viết tắt đó (VD: "Hội đồng nhân dân", "Ủy ban nhân dân")
+
+Chỉ trả về JSON array, không có giải thích hay text khác. Nếu không có từ viết tắt nào, trả về mảng rỗng [].
+
+Ví dụ format:
+[
+  {"abbreviation": "HĐND", "fullText": "Hội đồng nhân dân"},
+  {"abbreviation": "UBND", "fullText": "Ủy ban nhân dân"}
+]`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: { responseMimeType: "application/json" }
+    });
+
+    let jsonText = (response as any)?.text || "[]";
+    jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '').trim();
+    
+    const abbreviations = JSON.parse(jsonText);
+    if (Array.isArray(abbreviations)) {
+      // Loại bỏ trùng lặp
+      const unique = abbreviations.reduce((acc: any[], item: any) => {
+        if (item.abbreviation && item.fullText) {
+          const exists = acc.find(a => a.abbreviation === item.abbreviation);
+          if (!exists) acc.push({ abbreviation: item.abbreviation.trim(), fullText: item.fullText.trim() });
+        }
+        return acc;
+      }, []);
+      
+      if (onLog && unique.length > 0) {
+        onLog(`Đã phát hiện ${unique.length} từ viết tắt trong văn bản.`, "info");
+      }
+      return unique;
+    }
+    return [];
+  } catch (error: any) {
+    const info = handleAiError(error);
+    if (onLog) onLog(`Không thể trích xuất từ viết tắt. (${info.message})`, "warning" as any);
+    return [];
+  }
 };
 
 /**
@@ -290,7 +364,15 @@ export const generateAudioSegment = async (text: string, config: any, onLog?: an
   } catch (error: any) { throw new Error(handleAiError(error).message); }
 };
 
-export const generateAudioParallel = async (text: string, config: any, onProgress: any, onLog?: any, apiKey: string = ""): Promise<ArrayBuffer> => {
+export const generateAudioParallel = async (
+  text: string, 
+  config: any, 
+  onProgress: any, 
+  onLog?: any, 
+  apiKey: string = "", 
+  customAbbreviations?: Array<{ abbreviation: string; fullText: string }>,
+  onAbbreviationsExtracted?: (abbrs: Array<{ abbreviation: string; fullText: string }>) => void
+): Promise<ArrayBuffer> => {
   const raw = text || "";
 
   // NGUYÊN TẮC TIẾT KIỆM QUOTA VÀ ĐẢM BẢO CHÍNH TẢ:
@@ -304,10 +386,24 @@ export const generateAudioParallel = async (text: string, config: any, onProgres
   if (raw.length >= LONG_TEXT_THRESHOLD || hasAdministrativeAbbr) {
     if (onLog) onLog("Đang nhờ AI hiệu đính để sửa chính tả và mở rộng viết tắt...", "info");
     preprocessedText = await refineTextForReading(raw, apiKey, onLog);
+    
+    // Tự động extract abbreviations từ văn bản gốc sau khi đã refine (nếu có callback)
+    // Chỉ extract từ văn bản gốc để phát hiện các từ viết tắt chưa được mở rộng
+    if (onAbbreviationsExtracted && apiKey) {
+      try {
+        const extracted = await extractAbbreviations(raw, apiKey);
+        if (extracted.length > 0) {
+          onAbbreviationsExtracted(extracted);
+        }
+      } catch (e) {
+        // Không làm gián đoạn quá trình tạo audio nếu extract lỗi
+        console.warn("Không thể extract abbreviations:", e);
+      }
+    }
   }
 
   // BƯỚC 2: Chuẩn hóa kỹ thuật (ký hiệu, đơn vị, khoảng trắng...) để đọc TTS mượt.
-  const normalizedText = normalizeTextForSpeech(preprocessedText);
+  const normalizedText = normalizeTextForSpeech(preprocessedText, customAbbreviations);
 
   // TỐI ƯU GIỮ TÔNG GIỌNG THỐNG NHẤT:
   // Ưu tiên đọc liền một đoạn để tránh đổi tông giọng (nam/nữ) giữa các đoạn.
@@ -472,7 +568,7 @@ export const generateAdImage = async (prompt: string, onLog?: any, apiKey: strin
       contents: [{ text: `High-quality advertising background: ${prompt}. No text.` }],
       config: { imageConfig: { aspectRatio: "1:1" } }
     });
-    const part = response.candidates?.[0]?.content?.parts?.find(p => p.inlineData);
+    const part = response.candidates?.[0]?.content?.parts?.find((p: any) => p.inlineData);
     if (!part) throw new Error("AI không trả về ảnh.");
     return `data:image/png;base64,${part.inlineData.data}`;
   } catch (e: any) {
