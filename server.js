@@ -429,6 +429,42 @@ app.post('/api/test_webhook', async (req, res) => {
   }
 });
 
+// API: Lấy từ điển từ viết tắt
+app.get('/api/data/abbreviations', async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT data FROM bm_settings WHERE id = $1', ['abbreviations']);
+    if (rows.length > 0) {
+      res.json(rows[0]?.data || []);
+    } else {
+      res.json([]);
+    }
+  } catch (err) {
+    console.error("❌ Lỗi tải từ điển:", err.message);
+    res.status(500).json({ error: "Lỗi kết nối cơ sở dữ liệu" });
+  }
+});
+
+// API: Lưu từ điển từ viết tắt
+app.post('/api/data/abbreviations', async (req, res) => {
+  try {
+    const bodyData = req.body;
+    if (!Array.isArray(bodyData)) {
+      return res.status(400).json({ error: "Dữ liệu phải là mảng" });
+    }
+    
+    const jsonData = JSON.stringify(bodyData);
+    await pool.query(
+      'INSERT INTO bm_settings (id, data) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET data = $2',
+      ['abbreviations', jsonData]
+    );
+    console.log(`✅ Lưu từ điển thành công. Số lượng: ${bodyData.length}`);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("❌ Lỗi lưu từ điển:", err.message);
+    res.status(500).json({ error: "Lỗi lưu dữ liệu: " + err.message });
+  }
+});
+
 // Phục vụ ứng dụng Frontend cho các route không phải API
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));

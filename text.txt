@@ -1,0 +1,50 @@
+2026-01-22T14:31:33.536708498Z ==> Using Node.js version 20.11.0 via environment variable NODE_VERSION
+2026-01-22T14:31:33.561561981Z ==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+2026-01-22T14:31:33.697186208Z ==> Running build command 'npm install && npm run build'...
+2026-01-22T14:31:35.088053047Z 
+2026-01-22T14:31:35.088084538Z up to date, audited 309 packages in 1s
+2026-01-22T14:31:35.088171031Z 
+2026-01-22T14:31:35.088262313Z 58 packages are looking for funding
+2026-01-22T14:31:35.088272234Z   run `npm fund` for details
+2026-01-22T14:31:35.100028506Z 
+2026-01-22T14:31:35.100048227Z 2 moderate severity vulnerabilities
+2026-01-22T14:31:35.100051197Z 
+2026-01-22T14:31:35.100054177Z To address all issues (including breaking changes), run:
+2026-01-22T14:31:35.100057577Z   npm audit fix --force
+2026-01-22T14:31:35.100060187Z 
+2026-01-22T14:31:35.100063067Z Run `npm audit` for details.
+2026-01-22T14:31:35.380762656Z 
+2026-01-22T14:31:35.380786166Z > baominh-ai-tts@1.0.0 build
+2026-01-22T14:31:35.380788976Z > vite build
+2026-01-22T14:31:35.380791096Z 
+2026-01-22T14:31:35.593565284Z vite v5.4.21 building for production...
+2026-01-22T14:31:35.666814526Z 
+2026-01-22T14:31:35.666856107Z /index.css doesn't exist at build time, it will remain unchanged to be resolved at runtime
+2026-01-22T14:31:35.669228704Z transforming...
+2026-01-22T14:31:36.170568342Z ✓ 18 modules transformed.
+2026-01-22T14:31:36.17154868Z x Build failed in 553ms
+2026-01-22T14:31:36.171675434Z error during build:
+2026-01-22T14:31:36.171682844Z [vite:esbuild] Transform failed with 1 error:
+2026-01-22T14:31:36.171686374Z /opt/render/project/src/services/gemini.ts:491:9: ERROR: The symbol "audioBufferToWav" has already been declared
+2026-01-22T14:31:36.171689384Z file: /opt/render/project/src/services/gemini.ts:491:9
+2026-01-22T14:31:36.171691524Z 
+2026-01-22T14:31:36.171693764Z The symbol "audioBufferToWav" has already been declared
+2026-01-22T14:31:36.171696084Z 489|  };
+2026-01-22T14:31:36.171698534Z 490|  
+2026-01-22T14:31:36.171711655Z 491|  function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+2026-01-22T14:31:36.171714765Z    |           ^
+2026-01-22T14:31:36.171717135Z 492|    const numChannels = buffer.numberOfChannels;
+2026-01-22T14:31:36.171719515Z 493|    const length = buffer.length * numChannels * 2;
+2026-01-22T14:31:36.171721735Z 
+2026-01-22T14:31:36.171724625Z     at failureErrorWithLog (/opt/render/project/src/node_modules/esbuild/lib/main.js:1472:15)
+2026-01-22T14:31:36.171727315Z     at /opt/render/project/src/node_modules/esbuild/lib/main.js:755:50
+2026-01-22T14:31:36.171729815Z     at responseCallbacks.<computed> (/opt/render/project/src/node_modules/esbuild/lib/main.js:622:9)
+2026-01-22T14:31:36.171732245Z     at handleIncomingPacket (/opt/render/project/src/node_modules/esbuild/lib/main.js:677:12)
+2026-01-22T14:31:36.171734695Z     at Socket.readFromStdout (/opt/render/project/src/node_modules/esbuild/lib/main.js:600:7)
+2026-01-22T14:31:36.171736965Z     at Socket.emit (node:events:518:28)
+2026-01-22T14:31:36.171739405Z     at addChunk (node:internal/streams/readable:559:12)
+2026-01-22T14:31:36.171751836Z     at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+2026-01-22T14:31:36.171754476Z     at Readable.push (node:internal/streams/readable:390:5)
+2026-01-22T14:31:36.171756966Z     at Pipe.onStreamRead (node:internal/stream_base_commons:190:23)
+2026-01-22T14:31:36.291981636Z ==> Build failed 😞
+2026-01-22T14:31:36.291996696Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys

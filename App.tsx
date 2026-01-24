@@ -5,11 +5,11 @@ import {
   UserPlus, Key, Shield, MessageCircle, ExternalLink,
   Trash2, Edit, Calendar, CreditCard, Save, Users,
   Gift, Upload, FileJson, Mic, FileUp, Rewind, FastForward, Music,
-  ChevronDown, ClipboardPaste, CalendarClock, Zap
+  ChevronDown, ClipboardPaste, CalendarClock, Zap, BookOpen, Plus
 } from 'lucide-react';
 import { READING_MODES, PRESET_VOICES, ICONS } from './constants';
-import { GenerationState, VoiceConfig, TTSProvider, ReadingMode, UserProfile, ManagedKey, UserRole, PlanType, ClonedVoice } from './types';
-import { generateContentFromDescription, generateAudioParallel, pcmToMp3, pcmToWav, analyzeVoice, mixAudio, testApiKey } from './services/gemini';
+import { GenerationState, VoiceConfig, TTSProvider, ReadingMode, UserProfile, ManagedKey, UserRole, PlanType, ClonedVoice, Abbreviation } from './types';
+import { generateContentFromDescription, generateAudioParallel, pcmToMp3, pcmToWav, analyzeVoice, mixAudio, testApiKey, extractAbbreviations } from './services/gemini';
 
 // --- CONFIGURATION ---
 const DAILY_LIMITS: Record<PlanType, number> = {
@@ -46,7 +46,9 @@ const INITIAL_KEYS: ManagedKey[] = [
 // --- API HELPER ---
 const saveDataToApi = async (table: string, data: any) => {
     try {
-        await fetch(`/api/data/${table}`, {
+        // Abbreviations có endpoint riêng
+        const url = table === 'abbreviations' ? '/api/data/abbreviations' : `/api/data/${table}`;
+        await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
@@ -134,6 +136,189 @@ const LoginScreen = ({ onLogin, onGuest, onContact, onCreateKey, isLoading }: an
             </div>
         </div>
     );
+};
+
+// --- COMPONENT: DICTIONARY MANAGER ---
+const DictionaryManager = ({ abbreviations, onUpdate, onAdd, onDelete, onEdit, isVisible, onClose }: any) => {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editAbbr, setEditAbbr] = useState('');
+  const [editFullText, setEditFullText] = useState('');
+  const [newAbbr, setNewAbbr] = useState('');
+  const [newFullText, setNewFullText] = useState('');
+
+  const handleStartEdit = (item: Abbreviation) => {
+    setEditingId(item.id);
+    setEditAbbr(item.abbreviation);
+    setEditFullText(item.fullText);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingId && editAbbr.trim() && editFullText.trim()) {
+      onEdit(editingId, editAbbr.trim(), editFullText.trim());
+      setEditingId(null);
+      setEditAbbr('');
+      setEditFullText('');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditAbbr('');
+    setEditFullText('');
+  };
+
+  const handleAddNew = () => {
+    if (newAbbr.trim() && newFullText.trim()) {
+      onAdd(newAbbr.trim(), newFullText.trim());
+      setNewAbbr('');
+      setNewFullText('');
+    }
+  };
+
+  if (!isVisible) return null;
+
+  return (
+    <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-4 animate-in slide-in-from-bottom">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-500/20 rounded-xl">
+            <BookOpen className="w-5 h-5 text-indigo-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-white">Từ điển từ viết tắt</h3>
+            <p className="text-xs text-slate-400">Quản lý các từ viết tắt đã phát hiện</p>
+          </div>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* Add New Row */}
+      <div className="bg-slate-950 border border-slate-700 rounded-xl p-4 space-y-3">
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+          <Plus className="w-4 h-4" />
+          Thêm từ viết tắt mới
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <input
+            type="text"
+            placeholder="Từ viết tắt (VD: HĐND)"
+            value={newAbbr}
+            onChange={(e) => setNewAbbr(e.target.value)}
+            className="md:col-span-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          />
+          <input
+            type="text"
+            placeholder="Câu đầy đủ (VD: Hội đồng nhân dân)"
+            value={newFullText}
+            onChange={(e) => setNewFullText(e.target.value)}
+            className="md:col-span-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          />
+          <button
+            onClick={handleAddNew}
+            disabled={!newAbbr.trim() || !newFullText.trim()}
+            className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+          >
+            <Plus className="w-4 h-4" /> Thêm
+          </button>
+        </div>
+      </div>
+
+      {/* Dictionary Table */}
+      <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead className="bg-slate-900 text-slate-300 uppercase font-bold text-xs">
+              <tr>
+                <th className="p-4">Từ viết tắt</th>
+                <th className="p-4">Câu đầy đủ</th>
+                <th className="p-4 text-right">Hành động</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {abbreviations.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="p-8 text-center text-slate-500">
+                    Chưa có từ viết tắt nào. Hãy thêm mới hoặc để AI phát hiện từ văn bản.
+                  </td>
+                </tr>
+              ) : (
+                abbreviations.map((item: Abbreviation) => (
+                  <tr key={item.id} className="hover:bg-slate-800/50">
+                    {editingId === item.id ? (
+                      <>
+                        <td className="p-4">
+                          <input
+                            type="text"
+                            value={editAbbr}
+                            onChange={(e) => setEditAbbr(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          />
+                        </td>
+                        <td className="p-4">
+                          <input
+                            type="text"
+                            value={editFullText}
+                            onChange={(e) => setEditFullText(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                          />
+                        </td>
+                        <td className="p-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={handleSaveEdit}
+                              className="p-1.5 bg-emerald-600 hover:bg-emerald-500 rounded text-white"
+                              title="Lưu"
+                            >
+                              <Save className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={handleCancelEdit}
+                              className="p-1.5 bg-slate-700 hover:bg-slate-600 rounded text-slate-300"
+                              title="Hủy"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="p-4 font-mono text-indigo-400 font-semibold">{item.abbreviation}</td>
+                        <td className="p-4 text-slate-300">{item.fullText}</td>
+                        <td className="p-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <button
+                              onClick={() => handleStartEdit(item)}
+                              className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-400 hover:text-indigo-400 transition-colors"
+                              title="Sửa"
+                            >
+                              <Edit className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => onDelete(item.id)}
+                              className="p-1.5 bg-slate-800 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors"
+                              title="Xóa"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </>
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // --- COMPONENT: REWARD MODAL ---
@@ -436,6 +621,11 @@ export default function App() {
   const [showAdmin, setShowAdmin] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   
+  // Dictionary States
+  const [abbreviations, setAbbreviations] = useState<Abbreviation[]>([]);
+  const [showDictionary, setShowDictionary] = useState(false);
+  const [isExtractingAbbr, setIsExtractingAbbr] = useState(false);
+  
   // Notification State
   const [notification, setNotification] = useState<{
     open: boolean; title: string; message: string; type: 'error' | 'warning' | 'success' | 'info'; actionLabel?: string; onAction?: () => void;
@@ -635,7 +825,7 @@ export default function App() {
       if (text.trim()) {
          const cleaned = extractTitleAndBodyFromText(text);
          setState(prev => ({ ...prev, text: prev.text + (prev.text ? '\n\n' : '') + cleaned }));
-         showNotification("Thành công", `Đã trích xuất văn bản từ ${file.name}`, "success");
+         showNotification("Thành công", `Đã trích xuất văn bản từ ${file.name}. Bạn có thể dùng nút "Từ điển" để phát hiện từ viết tắt.`, "success");
       } else {
          showNotification("Lỗi", "File trống hoặc không đọc được nội dung text.", "error");
       }
@@ -651,7 +841,10 @@ export default function App() {
   const handleSmartPaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      if (text) setState(prev => ({ ...prev, text: prev.text ? prev.text + '\n' + text.trim() : text.trim() }));
+      if (text) {
+        setState(prev => ({ ...prev, text: prev.text ? prev.text + '\n' + text.trim() : text.trim() }));
+        showNotification("Thành công", "Đã dán văn bản. Bạn có thể dùng nút 'Từ điển' để phát hiện từ viết tắt.", "success");
+      }
     } catch (e) {
       showNotification("Lỗi Clipboard", "Hãy dùng Ctrl+V.", "warning");
     }
@@ -691,9 +884,10 @@ export default function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [usersRes, keysRes] = await Promise.all([
+        const [usersRes, keysRes, abbrRes] = await Promise.all([
           fetch('/api/data/users'),
-          fetch('/api/data/keys')
+          fetch('/api/data/keys'),
+          fetch('/api/data/abbreviations')
         ]);
         
         if (!usersRes.ok || !keysRes.ok) {
@@ -702,9 +896,12 @@ export default function App() {
 
         const usersJson = await usersRes.json();
         const keysJson = await keysRes.json();
+        const abbrJson = abbrRes.ok ? await abbrRes.json() : [];
         
-        const loadedUsers = usersJson.data;
-        const loadedKeys = keysJson.data;
+        const loadedUsers = usersJson?.data || usersJson;
+        const loadedKeys = keysJson?.data || keysJson;
+        // API /api/data/abbreviations trả về mảng trực tiếp, không có wrapper
+        const loadedAbbr = Array.isArray(abbrJson) ? abbrJson : (abbrJson?.data || []);
 
         if (Array.isArray(loadedUsers) && loadedUsers.length > 0) {
             setUsers(loadedUsers);
@@ -720,11 +917,14 @@ export default function App() {
             saveDataToApi('keys', INITIAL_KEYS);
         }
 
+        setAbbreviations(loadedAbbr);
+
         setIsDataLoaded(true);
       } catch (e) {
         console.error("Failed to load data, using local defaults. Error:", e);
         setUsers(INITIAL_USERS);
         setKeys(INITIAL_KEYS);
+        setAbbreviations([]);
         setIsDataLoaded(true);
       }
     };
@@ -743,6 +943,13 @@ export default function App() {
         saveDataToApi('keys', keys);
     }
   }, [keys, isDataLoaded]);
+
+  useEffect(() => {
+    if (isDataLoaded) {
+        // Lưu từ điển (kể cả khi rỗng để đảm bảo sync)
+        saveDataToApi('abbreviations', abbreviations);
+    }
+  }, [abbreviations, isDataLoaded]);
 
   // Payment Functions
   const getSepayQRUrl = (amount: number): string => {
@@ -1166,6 +1373,10 @@ export default function App() {
       try {
         const text = await generateContentFromDescription(input, activeMode.prompt, undefined, key);
         setState(prev => ({ ...prev, text, isGeneratingText: false }));
+        // Gợi ý extract abbreviations sau khi tạo nội dung
+        if (text.length > 100) {
+          showNotification("Thông tin", "Nội dung đã được tạo. Bạn có thể dùng nút 'Từ điển' để phát hiện từ viết tắt nếu cần.", "info");
+        }
       } catch (e: any) {
         const err = e.message.toLowerCase();
         const isRateLimit = err.includes("429") || err.includes("quota") || err.includes("hạn mức") || err.includes("resource exhausted");
@@ -1192,6 +1403,80 @@ export default function App() {
     await attempt();
   };
 
+  // Dictionary Functions
+  const handleExtractAbbreviations = async () => {
+    if (!state.text.trim()) return;
+    
+    const key = getApiKeyForUser();
+    if (!key) {
+      showNotification("Lỗi", "Cần có API Key để trích xuất từ viết tắt.", "error");
+      return;
+    }
+
+    setIsExtractingAbbr(true);
+    try {
+      const extracted = await extractAbbreviations(state.text, key, (msg, type) => {
+        if (type === 'info') showNotification("Thông tin", msg, "info");
+      });
+
+      if (extracted.length > 0) {
+        // Merge với abbreviations hiện có (tránh trùng lặp) - sử dụng functional update
+        setAbbreviations(prev => {
+          const existingAbbrs = new Set(prev.map(a => a.abbreviation.toUpperCase()));
+          const newAbbrs: Abbreviation[] = extracted
+            .filter(item => !existingAbbrs.has(item.abbreviation.toUpperCase()))
+            .map(item => ({
+              id: `abbr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+              abbreviation: item.abbreviation,
+              fullText: item.fullText,
+              createdAt: Date.now(),
+              updatedAt: Date.now()
+            }));
+
+          if (newAbbrs.length > 0) {
+            setShowDictionary(true);
+            showNotification("Thành công", `Đã phát hiện ${newAbbrs.length} từ viết tắt mới.`, "success");
+            return [...prev, ...newAbbrs];
+          } else {
+            showNotification("Thông tin", "Tất cả từ viết tắt đã có trong từ điển.", "info");
+            return prev;
+          }
+        });
+      } else {
+        showNotification("Thông tin", "Không phát hiện từ viết tắt nào trong văn bản.", "info");
+      }
+    } catch (e: any) {
+      showNotification("Lỗi", `Không thể trích xuất từ viết tắt: ${e.message}`, "error");
+    } finally {
+      setIsExtractingAbbr(false);
+    }
+  };
+
+  const handleAddAbbreviation = (abbr: string, fullText: string) => {
+    const newAbbr: Abbreviation = {
+      id: `abbr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      abbreviation: abbr,
+      fullText: fullText,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    setAbbreviations(prev => [...prev, newAbbr]);
+  };
+
+  const handleEditAbbreviation = (id: string, abbr: string, fullText: string) => {
+    setAbbreviations(prev => prev.map(item => 
+      item.id === id 
+        ? { ...item, abbreviation: abbr, fullText: fullText, updatedAt: Date.now() }
+        : item
+    ));
+  };
+
+  const handleDeleteAbbreviation = (id: string) => {
+    if (confirm('Bạn có chắc muốn xóa từ viết tắt này?')) {
+      setAbbreviations(prev => prev.filter(item => item.id !== id));
+    }
+  };
+
   const handleGenerateAudio = async () => {
     if (!state.text.trim()) return;
     if (currentUser && currentUser.credits < state.text.length) {
@@ -1208,8 +1493,41 @@ export default function App() {
           return;
       }
       try {
-        // 1. Generate Speech
-        let buffer = await generateAudioParallel(state.text, voiceConfig, (p) => console.log(p), undefined, key);
+        // 1. Generate Speech (truyền từ điển từ database và callback để tự động extract abbreviations)
+        let buffer = await generateAudioParallel(
+          state.text, 
+          voiceConfig, 
+          (p) => console.log(p), 
+          undefined, 
+          key, 
+          abbreviations,
+          // Callback tự động extract và thêm abbreviations mới vào từ điển
+          (extractedAbbrs) => {
+            if (extractedAbbrs.length > 0) {
+              // Sử dụng functional update để đảm bảo lấy state mới nhất
+              setAbbreviations(prev => {
+                const existingAbbrs = new Set(prev.map(a => a.abbreviation.toUpperCase()));
+                const newAbbrs: Abbreviation[] = extractedAbbrs
+                  .filter(item => !existingAbbrs.has(item.abbreviation.toUpperCase()))
+                  .map(item => ({
+                    id: `abbr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                    abbreviation: item.abbreviation,
+                    fullText: item.fullText,
+                    createdAt: Date.now(),
+                    updatedAt: Date.now()
+                  }));
+
+                if (newAbbrs.length > 0) {
+                  // Tự động hiển thị từ điển nếu có từ viết tắt mới
+                  setShowDictionary(true);
+                  showNotification("Thông tin", `Đã tự động phát hiện ${newAbbrs.length} từ viết tắt mới trong văn bản.`, "info");
+                  return [...prev, ...newAbbrs];
+                }
+                return prev;
+              });
+            }
+          }
+        );
         
         // 2. Mix Background Music if present
         if (bgMusic) {
@@ -1515,6 +1833,28 @@ export default function App() {
                                 </h2>
                                 <div className="flex gap-2">
                                     <button 
+                                      onClick={handleExtractAbbreviations}
+                                      disabled={isExtractingAbbr || !state.text.trim()}
+                                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 disabled:opacity-50 flex items-center gap-1" 
+                                      title="Phát hiện từ viết tắt từ văn bản"
+                                    >
+                                      {isExtractingAbbr ? <Loader2 className="w-4 h-4 animate-spin"/> : <BookOpen className="w-4 h-4"/>}
+                                      <span className="text-xs hidden sm:inline">Phát hiện</span>
+                                    </button>
+                                    <button 
+                                      onClick={() => setShowDictionary(!showDictionary)}
+                                      className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 flex items-center gap-1" 
+                                      title="Mở/Đóng từ điển"
+                                    >
+                                      <BookOpen className="w-4 h-4"/>
+                                      <span className="text-xs hidden sm:inline">Từ điển</span>
+                                      {abbreviations.length > 0 && (
+                                        <span className="ml-1 px-1.5 py-0.5 bg-indigo-500 text-white text-[10px] rounded-full">
+                                          {abbreviations.length}
+                                        </span>
+                                      )}
+                                    </button>
+                                    <button 
                                       onClick={() => fileTextInputRef.current?.click()} 
                                       disabled={isReadingFile}
                                       className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 disabled:opacity-50" 
@@ -1636,6 +1976,19 @@ export default function App() {
                         </div>
                     </div>
                 </div>
+
+                {/* Dictionary Manager */}
+                {showDictionary && (
+                  <DictionaryManager
+                    abbreviations={abbreviations}
+                    onUpdate={setAbbreviations}
+                    onAdd={handleAddAbbreviation}
+                    onEdit={handleEditAbbreviation}
+                    onDelete={handleDeleteAbbreviation}
+                    isVisible={showDictionary}
+                    onClose={() => setShowDictionary(false)}
+                  />
+                )}
 
                 {/* Floating Custom Player */}
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-4 z-50">

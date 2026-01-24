@@ -121,6 +121,14 @@ export interface SystemConfig {
   maxKeysPerDay: number;        // Giới hạn số key đóng góp mỗi ngày
 }
 
+export interface Abbreviation {
+  id: string;
+  abbreviation: string;        // Từ viết tắt (VD: "HĐND")
+  fullText: string;            // Câu đầy đủ (VD: "Hội đồng nhân dân")
+  createdAt: number;
+  updatedAt: number;
+}
+
 declare global {
   interface Window {
     lamejs?: any;
