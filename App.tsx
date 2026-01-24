@@ -178,7 +178,7 @@ const DictionaryManager = ({ abbreviations, onUpdate, onAdd, onDelete, onEdit, i
   if (!isVisible) return null;
 
   return (
-    <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-4 animate-in slide-in-from-bottom">
+    <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 space-y-4 animate-in slide-in-from-bottom max-h-[80vh] overflow-y-auto">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-indigo-500/20 rounded-xl">
@@ -315,6 +315,248 @@ const DictionaryManager = ({ abbreviations, onUpdate, onAdd, onDelete, onEdit, i
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- COMPONENT: ABBREVIATION CONFIRMATION MODAL ---
+const AbbreviationConfirmationModal = ({ 
+  isOpen, 
+  pendingAbbrs, 
+  onConfirm, 
+  onCancel,
+  onEdit,
+  onDelete,
+  onAdd
+}: {
+  isOpen: boolean;
+  pendingAbbrs: Array<{ abbreviation: string; fullText: string }>;
+  onConfirm: () => void;
+  onCancel: () => void;
+  onEdit: (index: number, abbr: string, fullText: string) => void;
+  onDelete: (index: number) => void;
+  onAdd: (abbr: string, fullText: string) => void;
+}) => {
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editAbbr, setEditAbbr] = useState('');
+  const [editFullText, setEditFullText] = useState('');
+  const [newAbbr, setNewAbbr] = useState('');
+  const [newFullText, setNewFullText] = useState('');
+  const [localAbbrs, setLocalAbbrs] = useState<Array<{ abbreviation: string; fullText: string }>>([]);
+
+  useEffect(() => {
+    if (isOpen) {
+      setLocalAbbrs([...pendingAbbrs]);
+    }
+  }, [isOpen, pendingAbbrs]);
+
+  const handleStartEdit = (index: number) => {
+    setEditingIndex(index);
+    setEditAbbr(localAbbrs[index].abbreviation);
+    setEditFullText(localAbbrs[index].fullText);
+  };
+
+  const handleSaveEdit = () => {
+    if (editingIndex !== null && editAbbr.trim() && editFullText.trim()) {
+      const updated = [...localAbbrs];
+      updated[editingIndex] = { abbreviation: editAbbr.trim(), fullText: editFullText.trim() };
+      setLocalAbbrs(updated);
+      onEdit(editingIndex, editAbbr.trim(), editFullText.trim());
+      setEditingIndex(null);
+      setEditAbbr('');
+      setEditFullText('');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingIndex(null);
+    setEditAbbr('');
+    setEditFullText('');
+  };
+
+  const handleDelete = (index: number) => {
+    if (confirm('Bạn có chắc muốn xóa từ viết tắt này?')) {
+      const updated = localAbbrs.filter((_, i) => i !== index);
+      setLocalAbbrs(updated);
+      onDelete(index);
+    }
+  };
+
+  const handleAddNew = () => {
+    if (newAbbr.trim() && newFullText.trim()) {
+      const updated = [...localAbbrs, { abbreviation: newAbbr.trim(), fullText: newFullText.trim() }];
+      setLocalAbbrs(updated);
+      onAdd(newAbbr.trim(), newFullText.trim());
+      setNewAbbr('');
+      setNewFullText('');
+    }
+  };
+
+  const handleConfirm = () => {
+    onConfirm();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+      <div className="bg-slate-900 rounded-2xl border border-slate-800 p-6 w-full max-w-4xl max-h-[90vh] overflow-y-auto shadow-2xl">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-500/20 rounded-xl">
+              <BookOpen className="w-6 h-6 text-indigo-400" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">Xác nhận từ viết tắt đã phát hiện</h3>
+              <p className="text-sm text-slate-400">Đã phát hiện {localAbbrs.length} từ viết tắt. Vui lòng xem lại và chỉnh sửa nếu cần.</p>
+            </div>
+          </div>
+          <button
+            onClick={onCancel}
+            className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Add New Row */}
+        <div className="bg-slate-950 border border-slate-700 rounded-xl p-4 space-y-3 mb-4">
+          <div className="flex items-center gap-2 text-sm font-semibold text-slate-300">
+            <Plus className="w-4 h-4" />
+            Thêm từ viết tắt mới
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+            <input
+              type="text"
+              placeholder="Từ viết tắt (VD: HĐND)"
+              value={newAbbr}
+              onChange={(e) => setNewAbbr(e.target.value)}
+              className="md:col-span-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+            />
+            <input
+              type="text"
+              placeholder="Câu đầy đủ (VD: Hội đồng nhân dân)"
+              value={newFullText}
+              onChange={(e) => setNewFullText(e.target.value)}
+              className="md:col-span-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+            />
+            <button
+              onClick={handleAddNew}
+              disabled={!newAbbr.trim() || !newFullText.trim()}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2 rounded-lg text-sm transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" /> Thêm
+            </button>
+          </div>
+        </div>
+
+        {/* Abbreviations Table */}
+        <div className="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden mb-4">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead className="bg-slate-900 text-slate-300 uppercase font-bold text-xs">
+                <tr>
+                  <th className="p-4">Từ viết tắt</th>
+                  <th className="p-4">Câu đầy đủ</th>
+                  <th className="p-4 text-right">Hành động</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {localAbbrs.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="p-8 text-center text-slate-500">
+                      Không có từ viết tắt nào.
+                    </td>
+                  </tr>
+                ) : (
+                  localAbbrs.map((item, index) => (
+                    <tr key={index} className="hover:bg-slate-800/50">
+                      {editingIndex === index ? (
+                        <>
+                          <td className="p-4">
+                            <input
+                              type="text"
+                              value={editAbbr}
+                              onChange={(e) => setEditAbbr(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                            />
+                          </td>
+                          <td className="p-4">
+                            <input
+                              type="text"
+                              value={editFullText}
+                              onChange={(e) => setEditFullText(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                            />
+                          </td>
+                          <td className="p-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={handleSaveEdit}
+                                className="p-1.5 bg-indigo-600 hover:bg-indigo-500 rounded text-white transition-colors"
+                                title="Lưu"
+                              >
+                                <Save className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="p-1.5 bg-slate-800 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
+                                title="Hủy"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="p-4 font-semibold text-white">{item.abbreviation}</td>
+                          <td className="p-4 text-slate-300">{item.fullText}</td>
+                          <td className="p-4">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleStartEdit(index)}
+                                className="p-1.5 bg-slate-800 hover:bg-indigo-500/20 rounded text-slate-400 hover:text-indigo-400 transition-colors"
+                                title="Sửa"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(index)}
+                                className="p-1.5 bg-slate-800 hover:bg-red-500/20 rounded text-slate-400 hover:text-red-400 transition-colors"
+                                title="Xóa"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition-colors"
+          >
+            Hủy
+          </button>
+          <button
+            onClick={handleConfirm}
+            className="px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg transition-colors flex items-center gap-2"
+          >
+            <Save className="w-4 h-4" />
+            Đồng ý và tiếp tục
+          </button>
         </div>
       </div>
     </div>
@@ -625,6 +867,11 @@ export default function App() {
   const [abbreviations, setAbbreviations] = useState<Abbreviation[]>([]);
   const [showDictionary, setShowDictionary] = useState(false);
   const [isExtractingAbbr, setIsExtractingAbbr] = useState(false);
+  
+  // Pending abbreviations from analysis - waiting for user confirmation
+  const [pendingAbbreviations, setPendingAbbreviations] = useState<Array<{ abbreviation: string; fullText: string }>>([]);
+  const [showAbbreviationModal, setShowAbbreviationModal] = useState(false);
+  const [abbreviationModalResolve, setAbbreviationModalResolve] = useState<((confirmed: boolean) => void) | null>(null);
   
   // Notification State
   const [notification, setNotification] = useState<{
@@ -1477,6 +1724,63 @@ export default function App() {
     }
   };
 
+  // Handlers for Abbreviation Confirmation Modal
+  const handleAbbreviationModalConfirm = () => {
+    // Thêm các pending abbreviations vào từ điển
+    const newAbbrs: Abbreviation[] = pendingAbbreviations.map(item => ({
+      id: `abbr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      abbreviation: item.abbreviation,
+      fullText: item.fullText,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }));
+    
+    setAbbreviations(prev => {
+      const existingAbbrs = new Set(prev.map(a => a.abbreviation.toUpperCase()));
+      const uniqueNewAbbrs = newAbbrs.filter(item => 
+        !existingAbbrs.has(item.abbreviation.toUpperCase())
+      );
+      return [...prev, ...uniqueNewAbbrs];
+    });
+    
+    // Đóng modal và resolve Promise
+    setShowAbbreviationModal(false);
+    const currentPending = [...pendingAbbreviations];
+    setPendingAbbreviations([]);
+    if (abbreviationModalResolve) {
+      abbreviationModalResolve(true);
+      setAbbreviationModalResolve(null);
+    }
+    
+    // Trả về các abbreviations đã được cập nhật để sử dụng trong generateAudioParallel
+    return currentPending;
+  };
+
+  const handleAbbreviationModalCancel = () => {
+    // Đóng modal và resolve Promise với false
+    setShowAbbreviationModal(false);
+    setPendingAbbreviations([]);
+    if (abbreviationModalResolve) {
+      abbreviationModalResolve(false);
+      setAbbreviationModalResolve(null);
+    }
+  };
+
+  const handleAbbreviationModalEdit = (index: number, abbr: string, fullText: string) => {
+    const updated = [...pendingAbbreviations];
+    updated[index] = { abbreviation: abbr, fullText };
+    setPendingAbbreviations(updated);
+  };
+
+  const handleAbbreviationModalDelete = (index: number) => {
+    const updated = pendingAbbreviations.filter((_, i) => i !== index);
+    setPendingAbbreviations(updated);
+  };
+
+  const handleAbbreviationModalAdd = (abbr: string, fullText: string) => {
+    setPendingAbbreviations(prev => [...prev, { abbreviation: abbr, fullText }]);
+  };
+
   const handleGenerateAudio = async () => {
     if (!state.text.trim()) return;
     if (currentUser && currentUser.credits < state.text.length) {
@@ -1493,43 +1797,61 @@ export default function App() {
           return;
       }
       try {
-        // 1. Generate Speech (truyền từ điển từ database và callback để tự động extract abbreviations)
+        // 1. Extract abbreviations trước (nếu cần) và hiển thị modal xác nhận
+        const LONG_TEXT_THRESHOLD = 500;
+        const hasAdministrativeAbbr = /\b(HĐND|UBND|UB\s*MTTQ|BCH|Đảng\s*uỷ|đảng\s*uỷ)\b/gi.test(state.text);
+        
+        if (state.text.length >= LONG_TEXT_THRESHOLD || hasAdministrativeAbbr) {
+          try {
+            const extracted = await extractAbbreviations(state.text, key);
+            if (extracted.length > 0) {
+              // Lọc các abbreviations mới (chưa có trong từ điển)
+              const existingAbbrs = new Set(abbreviations.map(a => a.abbreviation.toUpperCase()));
+              const newAbbrs = extracted.filter(item => 
+                !existingAbbrs.has(item.abbreviation.toUpperCase())
+              );
+              
+              if (newAbbrs.length > 0) {
+                // Hiển thị modal và đợi người dùng xác nhận
+                const confirmed = await new Promise<boolean>((resolve) => {
+                  setPendingAbbreviations(newAbbrs);
+                  setShowAbbreviationModal(true);
+                  setAbbreviationModalResolve(() => resolve);
+                });
+                
+                if (!confirmed) {
+                  // Người dùng hủy, dừng quá trình generate audio
+                  setState(prev => ({...prev, isGeneratingAudio: false}));
+                  return;
+                }
+              }
+            }
+          } catch (e) {
+            // Nếu extract lỗi, vẫn tiếp tục generate audio
+            console.warn("Không thể extract abbreviations:", e);
+          }
+        }
+        
+        // 2. Generate Speech (sau khi đã xác nhận abbreviations)
+        // Lấy abbreviations mới nhất - sử dụng functional update để đảm bảo có dữ liệu mới nhất
+        let finalAbbreviations = abbreviations;
+        setAbbreviations(prev => {
+          finalAbbreviations = prev;
+          return prev;
+        });
+        
         let buffer = await generateAudioParallel(
           state.text, 
           voiceConfig, 
           (p) => console.log(p), 
           undefined, 
           key, 
-          abbreviations,
-          // Callback tự động extract và thêm abbreviations mới vào từ điển
-          (extractedAbbrs) => {
-            if (extractedAbbrs.length > 0) {
-              // Sử dụng functional update để đảm bảo lấy state mới nhất
-              setAbbreviations(prev => {
-                const existingAbbrs = new Set(prev.map(a => a.abbreviation.toUpperCase()));
-                const newAbbrs: Abbreviation[] = extractedAbbrs
-                  .filter(item => !existingAbbrs.has(item.abbreviation.toUpperCase()))
-                  .map(item => ({
-                    id: `abbr-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-                    abbreviation: item.abbreviation,
-                    fullText: item.fullText,
-                    createdAt: Date.now(),
-                    updatedAt: Date.now()
-                  }));
-
-                if (newAbbrs.length > 0) {
-                  // Tự động hiển thị từ điển nếu có từ viết tắt mới
-                  setShowDictionary(true);
-                  showNotification("Thông tin", `Đã tự động phát hiện ${newAbbrs.length} từ viết tắt mới trong văn bản.`, "info");
-                  return [...prev, ...newAbbrs];
-                }
-                return prev;
-              });
-            }
-          }
+          finalAbbreviations, // Sử dụng abbreviations đã được cập nhật
+          // Không cần callback nữa vì đã extract trước
+          undefined
         );
         
-        // 2. Mix Background Music if present
+        // 3. Mix Background Music if present
         if (bgMusic) {
              try {
                 buffer = await mixAudio(buffer, bgMusic.buffer, bgVolume);
@@ -1989,6 +2311,17 @@ export default function App() {
                     onClose={() => setShowDictionary(false)}
                   />
                 )}
+
+                {/* Abbreviation Confirmation Modal */}
+                <AbbreviationConfirmationModal
+                  isOpen={showAbbreviationModal}
+                  pendingAbbrs={pendingAbbreviations}
+                  onConfirm={handleAbbreviationModalConfirm}
+                  onCancel={handleAbbreviationModalCancel}
+                  onEdit={handleAbbreviationModalEdit}
+                  onDelete={handleAbbreviationModalDelete}
+                  onAdd={handleAbbreviationModalAdd}
+                />
 
                 {/* Floating Custom Player */}
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-3xl px-4 z-50">
