@@ -186,6 +186,14 @@ export const normalizeTextForSpeech = (text: string, customAbbreviations?: Array
       processed = processed.replace(regex, fullText + " ");
   }
 
+  // 5.1. Sửa lỗi "ngày" bị đọc 2 lần sau khi thay thế từ viết tắt
+  // Trường hợp: "NĐ-CP ngày 15/12" -> "Nghị định của Chính phủ ngày ngày 15 tháng 12"
+  // Sửa thành: "Nghị định của Chính phủ ngày 15 tháng 12"
+  // Xử lý trường hợp có năm: "ngày ngày 15 tháng 12 năm 2024"
+  processed = processed.replace(/\bngày\s+ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})/gi, "ngày $1 tháng $2 năm $3");
+  // Xử lý trường hợp không có năm: "ngày ngày 15 tháng 12"
+  processed = processed.replace(/\bngày\s+ngày\s+(\d{1,2})\s+tháng\s+(\d{1,2})\b/gi, "ngày $1 tháng $2");
+
   // 6. Chuẩn hóa dấu câu để AI ngắt nghỉ đúng (Dấu câu dính liền)
   processed = processed.replace(/([,.!:;?])(?=[^\s\d])/g, '$1 '); // "chào,bạn" -> "chào, bạn"
   processed = processed.replace(/\s+([,.!:;?])/g, '$1'); // "chào , bạn" -> "chào, bạn"

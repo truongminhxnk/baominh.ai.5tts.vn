@@ -1,50 +1,50 @@
-2026-01-24T14:26:42.492535335Z ==> Checking out commit 8d8521087bb979db39a548af25b55bc3056352c6 in branch main
-2026-01-24T14:26:46.459907542Z ==> Downloaded 116MB in 1s. Extraction took 3s.
-2026-01-24T14:26:55.863309915Z ==> Using Node.js version 20.11.0 via environment variable NODE_VERSION
-2026-01-24T14:26:55.896850132Z ==> Docs on specifying a Node.js version: https://render.com/docs/node-version
-2026-01-24T14:26:56.022850379Z ==> Running build command 'npm install && npm run build'...
-2026-01-24T14:26:57.170132452Z 
-2026-01-24T14:26:57.170158612Z up to date, audited 309 packages in 968ms
-2026-01-24T14:26:57.170280026Z 
-2026-01-24T14:26:57.170378839Z 58 packages are looking for funding
-2026-01-24T14:26:57.170390859Z   run `npm fund` for details
-2026-01-24T14:26:57.192261133Z 
-2026-01-24T14:26:57.192282424Z 2 moderate severity vulnerabilities
-2026-01-24T14:26:57.192285694Z 
-2026-01-24T14:26:57.192289004Z To address all issues (including breaking changes), run:
-2026-01-24T14:26:57.192292554Z   npm audit fix --force
-2026-01-24T14:26:57.192296204Z 
-2026-01-24T14:26:57.192301624Z Run `npm audit` for details.
-2026-01-24T14:26:57.476116597Z 
-2026-01-24T14:26:57.476131377Z > baominh-ai-tts@1.0.0 build
-2026-01-24T14:26:57.476133777Z > vite build
-2026-01-24T14:26:57.476135527Z 
-2026-01-24T14:26:57.680309776Z vite v5.4.21 building for production...
-2026-01-24T14:26:57.737811008Z 
-2026-01-24T14:26:57.737833958Z /index.css doesn't exist at build time, it will remain unchanged to be resolved at runtime
-2026-01-24T14:26:57.740047312Z transforming...
-2026-01-24T14:26:59.638865908Z ✓ 1474 modules transformed.
-2026-01-24T14:26:59.640969899Z x Build failed in 1.94s
-2026-01-24T14:26:59.64101968Z error during build:
-2026-01-24T14:26:59.6410269Z App.tsx (15:6): "extractAbbreviations" is not exported by "services/gemini.ts", imported by "App.tsx".
-2026-01-24T14:26:59.64103077Z file: /opt/render/project/src/App.tsx:15:6
-2026-01-24T14:26:59.64103353Z 
-2026-01-24T14:26:59.64103645Z 13: 
-2026-01-24T14:26:59.641039811Z 14: // --- CONFIGURATION ---
-2026-01-24T14:26:59.641043231Z 15: const DAILY_LIMITS: Record<PlanType, number> = {
-2026-01-24T14:26:59.641046061Z           ^
-2026-01-24T14:26:59.641049411Z 16:     'TRIAL': 2000,
-2026-01-24T14:26:59.641053871Z 17:     'NONE': 0,
-2026-01-24T14:26:59.641058021Z 
-2026-01-24T14:26:59.641062431Z     at getRollupError (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/parseAst.js:401:41)
-2026-01-24T14:26:59.641067661Z     at error (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/parseAst.js:397:42)
-2026-01-24T14:26:59.641072131Z     at Module.error (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:17022:16)
-2026-01-24T14:26:59.641076772Z     at Module.traceVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:17478:29)
-2026-01-24T14:26:59.641080942Z     at ModuleScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:15141:39)
-2026-01-24T14:26:59.641084932Z     at FunctionScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
-2026-01-24T14:26:59.641087732Z     at FunctionBodyScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
-2026-01-24T14:26:59.641108983Z     at ReturnValueScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
-2026-01-24T14:26:59.641112303Z     at FunctionBodyScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
-2026-01-24T14:26:59.641115053Z     at BlockScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
-2026-01-24T14:26:59.719439939Z ==> Build failed 😞
-2026-01-24T14:26:59.719456899Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
+2026-01-24T14:30:45.311802058Z ==> Checking out commit 569260d0331e20e0c40845cf6906a855f84017a4 in branch main
+2026-01-24T14:30:48.496095214Z ==> Downloaded 116MB in 1s. Extraction took 3s.
+2026-01-24T14:30:50.540921225Z ==> Using Node.js version 20.11.0 via environment variable NODE_VERSION
+2026-01-24T14:30:50.566003336Z ==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+2026-01-24T14:30:50.679901834Z ==> Running build command 'npm install && npm run build'...
+2026-01-24T14:30:51.995803615Z 
+2026-01-24T14:30:51.995836935Z up to date, audited 309 packages in 1s
+2026-01-24T14:30:51.995880867Z 
+2026-01-24T14:30:51.99602677Z 58 packages are looking for funding
+2026-01-24T14:30:51.996070561Z   run `npm fund` for details
+2026-01-24T14:30:52.005743583Z 
+2026-01-24T14:30:52.005765553Z 2 moderate severity vulnerabilities
+2026-01-24T14:30:52.005770364Z 
+2026-01-24T14:30:52.005775264Z To address all issues (including breaking changes), run:
+2026-01-24T14:30:52.005779874Z   npm audit fix --force
+2026-01-24T14:30:52.005783794Z 
+2026-01-24T14:30:52.005788264Z Run `npm audit` for details.
+2026-01-24T14:30:52.237770271Z 
+2026-01-24T14:30:52.237793471Z > baominh-ai-tts@1.0.0 build
+2026-01-24T14:30:52.237798021Z > vite build
+2026-01-24T14:30:52.237801591Z 
+2026-01-24T14:30:52.497120383Z vite v5.4.21 building for production...
+2026-01-24T14:30:52.585376297Z 
+2026-01-24T14:30:52.585396488Z /index.css doesn't exist at build time, it will remain unchanged to be resolved at runtime
+2026-01-24T14:30:52.58760013Z transforming...
+2026-01-24T14:30:54.776495872Z ✓ 1474 modules transformed.
+2026-01-24T14:30:54.778346527Z x Build failed in 2.23s
+2026-01-24T14:30:54.778399368Z error during build:
+2026-01-24T14:30:54.778405458Z App.tsx (15:6): "extractAbbreviations" is not exported by "services/gemini.ts", imported by "App.tsx".
+2026-01-24T14:30:54.778409708Z file: /opt/render/project/src/App.tsx:15:6
+2026-01-24T14:30:54.778412958Z 
+2026-01-24T14:30:54.778416488Z 13: 
+2026-01-24T14:30:54.778420619Z 14: // --- CONFIGURATION ---
+2026-01-24T14:30:54.778424959Z 15: const DAILY_LIMITS: Record<PlanType, number> = {
+2026-01-24T14:30:54.778428379Z           ^
+2026-01-24T14:30:54.778431849Z 16:     'TRIAL': 2000,
+2026-01-24T14:30:54.778435259Z 17:     'NONE': 0,
+2026-01-24T14:30:54.778438419Z 
+2026-01-24T14:30:54.778444609Z     at getRollupError (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/parseAst.js:401:41)
+2026-01-24T14:30:54.778448089Z     at error (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/parseAst.js:397:42)
+2026-01-24T14:30:54.778451539Z     at Module.error (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:17022:16)
+2026-01-24T14:30:54.778455619Z     at Module.traceVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:17478:29)
+2026-01-24T14:30:54.778459039Z     at ModuleScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:15141:39)
+2026-01-24T14:30:54.778462429Z     at FunctionScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
+2026-01-24T14:30:54.778465749Z     at FunctionBodyScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
+2026-01-24T14:30:54.77848066Z     at ReturnValueScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
+2026-01-24T14:30:54.77848317Z     at FunctionBodyScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
+2026-01-24T14:30:54.7784853Z     at BlockScope.findVariable (file:///opt/render/project/src/node_modules/rollup/dist/es/shared/node-entry.js:5688:38)
+2026-01-24T14:30:54.849677335Z ==> Build failed 😞
+2026-01-24T14:30:54.849701666Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
